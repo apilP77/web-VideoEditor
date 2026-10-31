@@ -175,12 +175,12 @@ async function runJob(type, file, options = {}) {
 }
 
 /**
- * Trims a video accurately by re-encoding it.
+ * Trims a video using stream copy by default or exact re-encoding when requested.
  *
  * @param {File} file Local video file.
  * @param {number} start Start time in seconds.
  * @param {number} end End time in seconds.
- * @param {{signal?: AbortSignal, onProgress?: (percent: number) => void}} options Cancellation and progress options.
+ * @param {{signal?: AbortSignal, onProgress?: (percent: number) => void, exact?: boolean}} options Cancellation, progress, and frame-accuracy options.
  * @returns {Promise<{blob: Blob, filename: string}>} Trimmed video and suggested filename.
  */
 export function trimVideo(file, start, end, options = {}) {
@@ -191,7 +191,10 @@ export function trimVideo(file, start, end, options = {}) {
     return Promise.reject(new TypeError('End time must be greater than start time.'))
   }
 
-  return runJob('trim', file, { ...options, jobData: { start, end } })
+  return runJob('trim', file, {
+    ...options,
+    jobData: { start, end, exact: options.exact === true },
+  })
 }
 
 /**

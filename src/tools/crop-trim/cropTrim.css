@@ -358,6 +358,36 @@
   margin-top: 14px;
 }
 
+.exact-trim-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+  color: #d7d0e2;
+  font-size: 0.86rem;
+}
+
+.exact-trim-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: #a78bfa;
+}
+
+.exact-trim-toggle input:focus-visible {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 3px;
+}
+
+.exact-trim-toggle input:disabled {
+  cursor: not-allowed;
+}
+
+.trim-help {
+  margin-top: 6px !important;
+  color: #a9a1b7;
+  font-size: 0.8rem;
+}
+
 .secondary-button,
 .preset-button,
 .text-button {
@@ -437,6 +467,11 @@
 .result-panel .panel-heading {
   align-items: center;
   margin: 0;
+}
+
+.processed-with {
+  color: #b7afc6;
+  font-size: 0.82rem;
 }
 
 .result-video {

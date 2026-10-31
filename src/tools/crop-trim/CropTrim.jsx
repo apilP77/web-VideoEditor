@@ -3,7 +3,7 @@ import {
   cropVideo,
   trimAndCrop,
   trimVideo,
-} from '../../shared/ffmpeg/ffmpegClient'
+} from '../../shared/media/engine'
 import DeviceWarning from '../../shared/components/DeviceWarning'
 import DownloadButton from '../../shared/components/DownloadButton'
 import ProgressBar from '../../shared/components/ProgressBar'
@@ -56,6 +56,7 @@ function CropTrim() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [startTime, setStartTime] = useState(0)
   const [endTime, setEndTime] = useState(0)
+  const [exactTrim, setExactTrim] = useState(false)
   const [crop, setCrop] = useState(null)
   const [activePreset, setActivePreset] = useState('Free')
   const [progress, setProgress] = useState(0)
@@ -105,6 +106,7 @@ function CropTrim() {
     setIsPlaying(false)
     setStartTime(0)
     setEndTime(0)
+    setExactTrim(false)
     setCrop(null)
     setActivePreset('Free')
     setError('')
@@ -324,7 +326,10 @@ function CropTrim() {
           options,
         )
       } else if (trimChanged) {
-        output = await trimVideo(file, startTime, endTime, options)
+        output = await trimVideo(file, startTime, endTime, {
+          ...options,
+          exact: exactTrim,
+        })
       } else {
         const exportCrop = getExportCrop()
         output = await cropVideo(file, exportCrop, videoSize, options)
@@ -361,6 +366,7 @@ function CropTrim() {
     setIsPlaying(false)
     setStartTime(0)
     setEndTime(0)
+    setExactTrim(false)
     setCrop(null)
     setError('')
     setMetadataError('')
@@ -612,6 +618,23 @@ function CropTrim() {
                           Set end to now
                         </button>
                       </div>
+                      <label className="exact-trim-toggle">
+                        <input
+                          type="checkbox"
+                          checked={exactTrim}
+                          disabled={isExporting || cropChanged}
+                          onChange={(event) => {
+                            setExactTrim(event.target.checked)
+                            setResult(null)
+                          }}
+                        />
+                        <span>Exact frame trim (re-encode)</span>
+                      </label>
+                      {cropChanged && (
+                        <p className="trim-help">
+                          Crop exports already re-encode for accurate boundaries.
+                        </p>
+                      )}
                     </section>
 
                     <section className="tool-panel" aria-labelledby="crop-heading">
@@ -668,6 +691,9 @@ function CropTrim() {
                     </div>
                     <DownloadButton result={result} />
                   </div>
+                  <p className="processed-with">
+                    Processed with: {result.processedWith}
+                  </p>
                   <video className="result-video" src={result.url} controls playsInline />
                 </section>
               )}

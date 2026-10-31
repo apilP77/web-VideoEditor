@@ -25,45 +25,51 @@ function createAbortError() {
   return error
 }
 
-async function getFFmpeg() {
-  if (ffmpegInstance?.loaded) {
-    return ffmpegInstance
+async function getFFmpeg(requestId) {
+  const timer = `FFmpeg core load #${requestId}`
+  console.time(timer)
+  try {
+    if (ffmpegInstance?.loaded) {
+      return ffmpegInstance
+    }
+
+    if (!ffmpegLoadPromise) {
+      const instance = new FFmpeg()
+      ffmpegInstance = instance
+
+      ffmpegLoadPromise = (async () => {
+        let coreURL
+        let wasmURL
+
+        try {
+          coreURL = await toBlobURL(`${coreBaseUrl}/ffmpeg-core.js`, 'text/javascript')
+          wasmURL = await toBlobURL(`${coreBaseUrl}/ffmpeg-core.wasm`, 'application/wasm')
+          await instance.load({ coreURL, wasmURL })
+          return instance
+        } catch (error) {
+          instance.terminate()
+          ffmpegInstance = null
+          const detail =
+            error && typeof error.message === 'string'
+              ? ` ${error.message || String(error)}`
+              : ` ${String(error)}`
+          throw new Error(
+            `Could not load FFmpeg. Check your internet connection and try again.${detail}`,
+            { cause: error },
+          )
+        } finally {
+          if (coreURL) URL.revokeObjectURL(coreURL)
+          if (wasmURL) URL.revokeObjectURL(wasmURL)
+        }
+      })().finally(() => {
+        ffmpegLoadPromise = null
+      })
+    }
+
+    return await ffmpegLoadPromise
+  } finally {
+    console.timeEnd(timer)
   }
-
-  if (!ffmpegLoadPromise) {
-    const instance = new FFmpeg()
-    ffmpegInstance = instance
-
-    ffmpegLoadPromise = (async () => {
-      let coreURL
-      let wasmURL
-
-      try {
-        coreURL = await toBlobURL(`${coreBaseUrl}/ffmpeg-core.js`, 'text/javascript')
-        wasmURL = await toBlobURL(`${coreBaseUrl}/ffmpeg-core.wasm`, 'application/wasm')
-        await instance.load({ coreURL, wasmURL })
-        return instance
-      } catch (error) {
-        instance.terminate()
-        ffmpegInstance = null
-        const detail =
-          error && typeof error.message === 'string'
-            ? ` ${error.message || String(error)}`
-            : ` ${String(error)}`
-        throw new Error(
-          `Could not load FFmpeg. Check your internet connection and try again.${detail}`,
-          { cause: error },
-        )
-      } finally {
-        if (coreURL) URL.revokeObjectURL(coreURL)
-        if (wasmURL) URL.revokeObjectURL(wasmURL)
-      }
-    })().finally(() => {
-      ffmpegLoadPromise = null
-    })
-  }
-
-  return ffmpegLoadPromise
 }
 
 function getInputExtension(fileName) {
@@ -103,7 +109,9 @@ function getOutputDetails(job) {
 function getCommand(job, inputPath, outputPath) {
   switch (job.type) {
     case 'trim':
-      return buildTrimArgs(inputPath, outputPath, job.start, job.end)
+      return buildTrimArgs(inputPath, outputPath, job.start, job.end, {
+        exact: job.exact,
+      })
     case 'crop':
       return buildCropArgs(inputPath, outputPath, job.crop, job.videoSize)
     case 'trimAndCrop':
@@ -139,7 +147,7 @@ function postJobError(requestId, error, cleanupErrors = []) {
   })
 }
 
-async function processJob(job) {
+async function processJobInner(job) {
   if (cancelledRequestIds.delete(job.requestId)) {
     self.postMessage({ type: 'cancelled', requestId: job.requestId })
     return
@@ -162,7 +170,8 @@ async function processJob(job) {
   const cleanupErrors = []
 
   try {
-    ffmpeg = await getFFmpeg()
+    console.info(`[${job.requestId}] Engine: Compatible mode (FFmpeg).`)
+    ffmpeg = await getFFmpeg(job.requestId)
     activeFFmpeg = ffmpeg
     if (controller.signal.aborted) throw createAbortError()
 
@@ -188,7 +197,14 @@ async function processJob(job) {
     ffmpeg.on('progress', progressHandler)
 
     outputMayExist = true
-    const exitCode = await ffmpeg.exec(args, -1, { signal: controller.signal })
+    const processingTimer = `FFmpeg processing #${job.requestId}`
+    console.time(processingTimer)
+    let exitCode
+    try {
+      exitCode = await ffmpeg.exec(args, -1, { signal: controller.signal })
+    } finally {
+      console.timeEnd(processingTimer)
+    }
     if (exitCode !== 0) {
       throw new Error('FFmpeg could not process this file. Check that the format is supported.')
     }
@@ -265,6 +281,16 @@ async function processJob(job) {
     [result],
   )
   self.postMessage({ type: 'progress', requestId: job.requestId, percent: 100 })
+}
+
+async function processJob(job) {
+  const timer = `FFmpeg total #${job.requestId}`
+  console.time(timer)
+  try {
+    await processJobInner(job)
+  } finally {
+    console.timeEnd(timer)
+  }
 }
 
 self.onmessage = (event) => {

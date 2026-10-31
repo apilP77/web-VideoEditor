@@ -8,21 +8,33 @@ import {
 } from './commands.js'
 
 describe('buildTrimArgs', () => {
-  it('builds a frame-accurate re-encoded trim command', () => {
+  it('uses fast stream copy with input seeking by default', () => {
     expect(buildTrimArgs('input.mp4', 'output.mp4', 1.25, 4)).toEqual([
-      '-i', 'input.mp4',
       '-ss', '1.25',
+      '-i', 'input.mp4',
       '-t', '2.75',
       '-map', '0:v:0',
       '-map', '0:a?',
-      '-c:v', 'libx264',
-      '-preset', 'ultrafast',
-      '-crf', '23',
-      '-c:a', 'aac',
-      '-b:a', '128k',
+      '-c', 'copy',
       '-movflags', '+faststart',
       'output.mp4',
     ])
+  })
+
+  it('re-encodes an exact trim using the fast H.264 preset', () => {
+    const args = buildTrimArgs('input.mp4', 'output.mp4', 1.25, 4, {
+      exact: true,
+    })
+
+    expect(args).toContain('-ss')
+    expect(args.indexOf('-ss')).toBeLessThan(args.indexOf('-i'))
+    expect(args).toContain('-preset')
+    expect(args).toContain('ultrafast')
+    expect(args).toContain('-crf')
+    expect(args).toContain('28')
+    expect(args).toContain('-pix_fmt')
+    expect(args).toContain('yuv420p')
+    expect(args).not.toContain('copy')
   })
 
   it('rejects invalid time ranges', () => {

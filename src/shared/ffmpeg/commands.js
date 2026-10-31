@@ -36,14 +36,16 @@ function normalizeCrop(crop, videoSize) {
   return { w: evenW, h: evenH, x: evenX, y: evenY }
 }
 
-function buildVideoOutputArgs(inputPath, outputPath) {
+function buildVideoOutputArgs(inputPath, outputPath, filters = []) {
   return [
     '-i', inputPath,
+    ...filters,
     '-map', '0:v:0',
     '-map', '0:a?',
     '-c:v', 'libx264',
     '-preset', 'ultrafast',
-    '-crf', '23',
+    '-crf', '28',
+    '-pix_fmt', 'yuv420p',
     '-c:a', 'aac',
     '-b:a', '128k',
     '-movflags', '+faststart',
@@ -52,20 +54,46 @@ function buildVideoOutputArgs(inputPath, outputPath) {
 }
 
 /**
- * Builds an accurate, re-encoded FFmpeg command for trimming a video.
+ * Builds an FFmpeg trim command using stream copy unless exact re-encoding is requested.
  *
  * @param {string} inputPath FFmpeg virtual filesystem input path.
  * @param {string} outputPath FFmpeg virtual filesystem output path.
  * @param {number} start Start time in seconds.
  * @param {number} end End time in seconds.
+ * @param {{exact?: boolean}} options Re-encode to trim at an exact frame boundary.
  * @returns {string[]} FFmpeg arguments.
  */
-export function buildTrimArgs(inputPath, outputPath, start, end) {
+export function buildTrimArgs(inputPath, outputPath, start, end, { exact = false } = {}) {
   assertTrimRange(start, end)
 
-  const args = buildVideoOutputArgs(inputPath, outputPath)
-  args.splice(2, 0, '-ss', formatNumber(start), '-t', formatNumber(end - start))
-  return args
+  const seekArgs = ['-ss', formatNumber(start), '-i', inputPath]
+  const durationArgs = ['-t', formatNumber(end - start)]
+  if (!exact) {
+    return [
+      ...seekArgs,
+      ...durationArgs,
+      '-map', '0:v:0',
+      '-map', '0:a?',
+      '-c', 'copy',
+      '-movflags', '+faststart',
+      outputPath,
+    ]
+  }
+
+  return [
+    ...seekArgs,
+    ...durationArgs,
+    '-map', '0:v:0',
+    '-map', '0:a?',
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-crf', '28',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-movflags', '+faststart',
+    outputPath,
+  ]
 }
 
 /**
@@ -79,9 +107,7 @@ export function buildTrimArgs(inputPath, outputPath, start, end) {
  */
 export function buildCropArgs(inputPath, outputPath, crop, videoSize) {
   const { w, h, x, y } = normalizeCrop(crop, videoSize)
-  const args = buildVideoOutputArgs(inputPath, outputPath)
-  args.splice(2, 0, '-vf', `crop=${w}:${h}:${x}:${y}`)
-  return args
+  return buildVideoOutputArgs(inputPath, outputPath, ['-vf', `crop=${w}:${h}:${x}:${y}`])
 }
 
 /**
@@ -98,15 +124,22 @@ export function buildCropArgs(inputPath, outputPath, crop, videoSize) {
 export function buildTrimCropArgs(inputPath, outputPath, start, end, crop, videoSize) {
   assertTrimRange(start, end)
   const { w, h, x, y } = normalizeCrop(crop, videoSize)
-  const args = buildVideoOutputArgs(inputPath, outputPath)
-  args.splice(
-    2,
-    0,
+  return [
     '-ss', formatNumber(start),
+    '-i', inputPath,
     '-t', formatNumber(end - start),
     '-vf', `crop=${w}:${h}:${x}:${y}`,
-  )
-  return args
+    '-map', '0:v:0',
+    '-map', '0:a?',
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-crf', '28',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac',
+    '-b:a', '128k',
+    '-movflags', '+faststart',
+    outputPath,
+  ]
 }
 
 function buildAtempoChain(factor) {
@@ -149,7 +182,8 @@ export function buildSpeedArgs(inputPath, outputPath, factor) {
     '-filter:a', buildAtempoChain(factor),
     '-c:v', 'libx264',
     '-preset', 'ultrafast',
-    '-crf', '23',
+    '-crf', '28',
+    '-pix_fmt', 'yuv420p',
     '-c:a', 'aac',
     '-b:a', '128k',
     '-movflags', '+faststart',

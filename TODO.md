@@ -33,6 +33,8 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Helper: `changeSpeed(file, factor)` (video `setpts`, audio chained `atempo` for factors outside 0.5-2.0)
 - [x] Helper: `extractAudio(file)` to 16 kHz mono WAV
 - [x] Handle errors and cleanup (delete files from FFmpeg virtual FS after use)
+- [x] Add fast trim-only stream copy with an exact re-encode option
+- [ ] Use WebCodecs for trim, crop, rotate and audio extraction; keep FFmpeg for speed, GIF and fallback
 
 ## Phase 3: Crop and trim tool
 - [x] Video preview with `<video>` and playback controls
@@ -43,6 +45,7 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Combine trim + crop into a single FFmpeg command
 - [x] Progress bar, result preview, download
 - [x] Test with landscape to 9:16 conversion
+- [x] Prefer the WebCodecs engine for crop and trim with an FFmpeg fallback
 
 ## Phase 4: Speed changer tool
 - [ ] Upload and preview
