@@ -78,6 +78,8 @@ function getInputExtension(fileName) {
 }
 
 function getOutputDetails(job) {
+  if (job.type === 'inspectMediaInfo') return null
+
   const baseName = job.fileName.replace(/\.[^.]+$/, '').replace(/[\\/:*?"<>|]/g, '_') || 'video'
 
   if (job.type === 'extractAudio') {
@@ -136,39 +138,6 @@ function getCommand(job, inputPath, outputPath, hasAudio = true) {
   }
 }
 
-async function detectAudioTrack(ffmpeg, inputPath, probePath, signal) {
-  const exitCode = await ffmpeg.ffprobe(
-    [
-      '-v', 'error',
-      '-select_streams', 'a:0',
-      '-show_entries', 'stream=codec_type',
-      '-of', 'json',
-      inputPath,
-      '-o', probePath,
-    ],
-    -1,
-    { signal },
-  )
-
-  if (exitCode !== 0) {
-    throw new Error('Could not inspect the video’s audio tracks.')
-  }
-
-  const probeOutput = await ffmpeg.readFile(probePath, 'utf8', { signal })
-  const probeText =
-    typeof probeOutput === 'string'
-      ? probeOutput
-      : new TextDecoder().decode(probeOutput)
-  let probeResult
-  try {
-    probeResult = JSON.parse(probeText)
-  } catch (error) {
-    throw new Error('Could not inspect the video’s audio tracks.', { cause: error })
-  }
-  return Array.isArray(probeResult.streams) &&
-    probeResult.streams.some((stream) => stream.codec_type === 'audio')
-}
-
 function postJobError(requestId, error, cleanupErrors = []) {
   const originalMessage =
     error instanceof Error ? error.message : 'An unexpected FFmpeg error occurred.'
@@ -197,15 +166,15 @@ async function processJobInner(job) {
 
   let inputPath
   let outputPath
-  let probePath
   let ffmpeg
   let progressHandler
+  let logHandler
   let result
   let resultDetails
+  let inspectionLog
   let jobError
   let inputMayExist = false
   let outputMayExist = false
-  let probeMayExist = false
   const cleanupErrors = []
 
   try {
@@ -217,69 +186,77 @@ async function processJobInner(job) {
     const inputExtension = getInputExtension(job.fileName)
     resultDetails = getOutputDetails(job)
     inputPath = `input-${job.requestId}.${inputExtension}`
-    outputPath = `output-${job.requestId}.${resultDetails.extension}`
+    if (resultDetails) {
+      outputPath = `output-${job.requestId}.${resultDetails.extension}`
+    }
 
-    if (job.type !== 'changeSpeed') {
+    if (job.type !== 'changeSpeed' && job.type !== 'inspectMediaInfo') {
       self.postMessage({ type: 'progress', requestId: job.requestId, percent: 5 })
     }
     inputMayExist = true
     await ffmpeg.writeFile(inputPath, new Uint8Array(job.fileData), {
       signal: controller.signal,
     })
-    let hasAudio = true
-    if (job.type === 'changeSpeed') {
-      hasAudio = false
-      if (!job.removeAudio) {
-        probePath = `probe-${job.requestId}.txt`
-        probeMayExist = true
-        hasAudio = await detectAudioTrack(
-          ffmpeg,
-          inputPath,
-          probePath,
-          controller.signal,
-        )
+    if (job.type === 'inspectMediaInfo') {
+      const logMessages = []
+      logHandler = ({ message }) => logMessages.push(message)
+      ffmpeg.on('log', logHandler)
+      try {
+        await ffmpeg.exec(['-i', inputPath], -1, { signal: controller.signal })
+      } finally {
+        ffmpeg.off('log', logHandler)
+        logHandler = null
       }
+      inspectionLog = logMessages.join('\n')
     } else {
-      self.postMessage({ type: 'progress', requestId: job.requestId, percent: 10 })
-    }
-    const args = getCommand(job, inputPath, outputPath, hasAudio)
+      if (job.type !== 'changeSpeed') {
+        self.postMessage({ type: 'progress', requestId: job.requestId, percent: 10 })
+      }
+      const args = getCommand(job, inputPath, outputPath, job.hasAudio)
 
-    progressHandler = ({ progress }) => {
-      if (job.type === 'changeSpeed' && !Number.isFinite(progress)) return
-      const percent = job.type === 'changeSpeed'
-        ? Math.min(99, Math.max(0, progress * 100))
-        : Number.isFinite(progress)
-          ? Math.min(95, 10 + progress * 85)
-          : 10
-      self.postMessage({ type: 'progress', requestId: job.requestId, percent })
-    }
-    ffmpeg.on('progress', progressHandler)
+      progressHandler = ({ progress }) => {
+        if (job.type === 'changeSpeed' && !Number.isFinite(progress)) return
+        const percent = job.type === 'changeSpeed'
+          ? Math.min(99, Math.max(0, progress * 100))
+          : Number.isFinite(progress)
+            ? Math.min(95, 10 + progress * 85)
+            : 10
+        self.postMessage({ type: 'progress', requestId: job.requestId, percent })
+      }
+      ffmpeg.on('progress', progressHandler)
 
-    outputMayExist = true
-    const processingTimer = `FFmpeg processing #${job.requestId}`
-    console.time(processingTimer)
-    let exitCode
-    try {
-      exitCode = await ffmpeg.exec(args, -1, { signal: controller.signal })
-    } finally {
-      console.timeEnd(processingTimer)
-    }
-    if (exitCode !== 0) {
-      throw new Error('FFmpeg could not process this file. Check that the format is supported.')
-    }
+      outputMayExist = true
+      const processingTimer = `FFmpeg processing #${job.requestId}`
+      console.time(processingTimer)
+      let exitCode
+      try {
+        exitCode = await ffmpeg.exec(args, -1, { signal: controller.signal })
+      } finally {
+        console.timeEnd(processingTimer)
+      }
+      if (exitCode !== 0) {
+        throw new Error('FFmpeg could not process this file. Check that the format is supported.')
+      }
 
-    const output = await ffmpeg.readFile(outputPath, undefined, {
-      signal: controller.signal,
-    })
-    if (!(output instanceof Uint8Array)) {
-      throw new Error('FFmpeg returned an invalid output file.')
+      const output = await ffmpeg.readFile(outputPath, undefined, {
+        signal: controller.signal,
+      })
+      if (!(output instanceof Uint8Array)) {
+        throw new Error('FFmpeg returned an invalid output file.')
+      }
+      result = output.slice().buffer
     }
-    result = output.slice().buffer
   } catch (error) {
+    if (job.type === 'inspectMediaInfo') {
+      console.error('FFmpeg media-info inspection failed.', error)
+    }
     jobError = error
   } finally {
     if (ffmpeg && progressHandler) {
       ffmpeg.off('progress', progressHandler)
+    }
+    if (ffmpeg && logHandler) {
+      ffmpeg.off('log', logHandler)
     }
 
     // Terminating the core also discards its complete virtual filesystem.
@@ -287,7 +264,6 @@ async function processJobInner(job) {
       ? []
       : [
           [inputPath, inputMayExist],
-          [probePath, probeMayExist],
           [outputPath, outputMayExist],
         ]
     for (const [path, mayExist] of cleanupPaths) {
@@ -322,6 +298,15 @@ async function processJobInner(job) {
 
   if (jobError) {
     postJobError(job.requestId, jobError, cleanupErrors)
+    return
+  }
+
+  if (job.type === 'inspectMediaInfo') {
+    self.postMessage({
+      type: 'inspection',
+      requestId: job.requestId,
+      log: inspectionLog,
+    })
     return
   }
 

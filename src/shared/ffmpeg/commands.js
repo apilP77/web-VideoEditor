@@ -177,14 +177,14 @@ export function buildAtempoChain(factor) {
  * @param {string} inputPath FFmpeg virtual filesystem input path.
  * @param {string} outputPath FFmpeg virtual filesystem output path.
  * @param {number} factor Playback speed multiplier; values above 1 are faster.
- * @param {{hasAudio?: boolean, removeAudio?: boolean, keepAudioPitchNatural?: boolean}} options Audio stream and pitch settings.
+ * @param {{hasAudio?: boolean | 'unknown', removeAudio?: boolean, keepAudioPitchNatural?: boolean}} options Audio stream and pitch settings.
  * @returns {string[]} FFmpeg arguments.
  */
 export function buildSpeedArgs(
   inputPath,
   outputPath,
   factor,
-  { hasAudio = true, removeAudio = false, keepAudioPitchNatural = true } = {},
+  { hasAudio = 'unknown', removeAudio = false, keepAudioPitchNatural = true } = {},
 ) {
   if (!Number.isFinite(factor) || factor <= 0) {
     throw new RangeError('Speed factor must be a positive finite number.')
@@ -200,12 +200,12 @@ export function buildSpeedArgs(
     '-pix_fmt', 'yuv420p',
   ]
 
-  if (hasAudio && !removeAudio) {
+  if (hasAudio !== false && !removeAudio) {
     const audioFilter = keepAudioPitchNatural
       ? buildAtempoChain(factor)
       : `aresample=44100,asetrate=${formatNumber(44100 * factor)},aresample=44100`
     args.push(
-      '-map', '0:a?',
+      '-map', hasAudio === true ? '0:a:0' : '0:a?',
       '-filter:a', audioFilter,
       '-c:a', 'aac',
       '-b:a', '128k',

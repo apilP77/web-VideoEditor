@@ -105,7 +105,7 @@ describe('buildSpeedArgs', () => {
     const args = buildSpeedArgs('input.mp4', 'output.mp4', 2, { hasAudio: true })
 
     expect(args).toContain('-map')
-    expect(args).toContain('0:a?')
+    expect(args).toContain('0:a:0')
     expect(args).toContain('-filter:a')
     expect(args).toContain('-c:a')
     expect(args).toContain('-b:a')
@@ -124,6 +124,17 @@ describe('buildSpeedArgs', () => {
     const args = buildSpeedArgs('input.mp4', 'output.mp4', 2, { hasAudio: false })
 
     expect(args.join(' ')).not.toMatch(/(?:-map 0:a|-filter:a|-c:a|-b:a)/)
+  })
+
+  it('keeps audio options optional when audio availability is unknown', () => {
+    const args = buildSpeedArgs('input.mp4', 'output.mp4', 2, {
+      hasAudio: 'unknown',
+    })
+
+    expect(args).toContain('0:a?')
+    expect(args).toContain('-filter:a')
+    expect(args).toContain('-c:a')
+    expect(args).toContain('-b:a')
   })
 
   it('changes audio pitch when natural pitch is disabled', () => {

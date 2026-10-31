@@ -19,6 +19,7 @@ import {
 } from '../../shared/utils/cropGeometry'
 import { isVideoFile } from '../../shared/utils/mediaFiles'
 import { getMonotonicTime } from '../../shared/utils/timing'
+import { getMediaInfo } from '../../shared/media/mediaInfo'
 import './cropTrim.css'
 
 const ASPECT_PRESETS = [
@@ -30,6 +31,7 @@ const ASPECT_PRESETS = [
 ]
 
 const MIN_TRIM_SECONDS = 0.1
+const UNKNOWN_MEDIA_INFO = { hasAudio: 'unknown' }
 
 function formatTime(seconds) {
   const deciseconds = Math.max(0, Math.round(seconds * 10))
@@ -56,6 +58,7 @@ function CropTrim({ tool }) {
   const [sourceUrl, setSourceUrl] = useState('')
   const [result, setResult] = useState(null)
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 })
+  const [mediaInfo, setMediaInfo] = useState(UNKNOWN_MEDIA_INFO)
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -87,6 +90,20 @@ function CropTrim({ tool }) {
     () => () => abortControllerRef.current?.abort(),
     [],
   )
+
+  useEffect(() => {
+    let active = true
+    setMediaInfo(UNKNOWN_MEDIA_INFO)
+    if (file) {
+      getMediaInfo(file).then((info) => {
+        if (active) setMediaInfo(info)
+      })
+    }
+
+    return () => {
+      active = false
+    }
+  }, [file])
 
   const { cardRef: resultBoxRef, highlighted: resultHighlighted } =
     useResultCardAttention(result)
@@ -122,6 +139,7 @@ function CropTrim({ tool }) {
     setSaved(false)
     setStatus('idle')
     setVideoSize({ width: 0, height: 0 })
+    setMediaInfo(UNKNOWN_MEDIA_INFO)
     setDuration(0)
     setCurrentTime(0)
     setIsPlaying(false)
@@ -596,6 +614,16 @@ function CropTrim({ tool }) {
                   </section>
 
                   <div className="editor-controls">
+                    {mediaInfo.hasAudio === false && (
+                      <p className="media-info-note" role="status">
+                        This video has no audio track.
+                      </p>
+                    )}
+                    {mediaInfo.hasAudio === 'unknown' && (
+                      <p className="media-info-note" role="status">
+                        Audio could not be confirmed; export will preserve it if available.
+                      </p>
+                    )}
                     <section className="tool-panel" aria-labelledby="trim-heading">
                       <div className="panel-heading">
                         <div>

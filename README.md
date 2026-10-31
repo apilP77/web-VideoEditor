@@ -76,6 +76,22 @@ export const tools = [
 
 Adding a tool later = create `src/tools/<new-tool>/` and add one line above.
 
+### Adding a new tool
+
+Create a self-contained folder under `src/tools/<tool-id>/` with the tool
+component and its styles. Reuse shared components from `src/shared/components/`
+instead of duplicating page layout, preview controls, processing status, or
+result presentation.
+
+Every tool page must wrap its content in `ToolLayout` and use the shared
+`getMediaInfo(file)` helper for video dimensions, duration, and audio-track
+availability. Use the shared `ProcessingBar` for exports and `ResultCard` for
+completed results. Keep audio availability as `unknown` when inspection fails;
+the export must still work with optional audio mapping.
+
+Add the component to `src/tools/index.js` with its metadata and set `ready: true`
+when it is finished. Only ready registry entries appear on the homepage.
+
 ### Folder structure
 
 ```

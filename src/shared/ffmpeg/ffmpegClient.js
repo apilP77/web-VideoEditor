@@ -66,6 +66,11 @@ function handleWorkerMessage(event) {
     return
   }
 
+  if (message.type === 'inspection') {
+    job.resolve(message.log)
+    return
+  }
+
   job.reject(new Error('The FFmpeg worker returned an unknown response.'))
 }
 
@@ -240,7 +245,7 @@ export function trimAndCrop(file, start, end, crop, videoSize, options = {}) {
  *
  * @param {File} file Local video file.
  * @param {number} factor Playback speed multiplier; values above 1 are faster.
- * @param {{signal?: AbortSignal, onProgress?: (percent: number) => void, removeAudio?: boolean, keepAudioPitchNatural?: boolean}} options Cancellation, progress, and audio settings.
+ * @param {{signal?: AbortSignal, onProgress?: (percent: number) => void, hasAudio?: boolean | 'unknown', removeAudio?: boolean, keepAudioPitchNatural?: boolean}} options Cancellation, audio availability, and pitch settings.
  * @returns {Promise<{blob: Blob, filename: string}>} Speed-adjusted video and suggested filename.
  */
 export function changeSpeed(file, factor, options = {}) {
@@ -254,10 +259,22 @@ export function changeSpeed(file, factor, options = {}) {
     ...options,
     jobData: {
       factor,
+      hasAudio: options.hasAudio ?? 'unknown',
       removeAudio: options.removeAudio === true,
       keepAudioPitchNatural: options.keepAudioPitchNatural !== false,
     },
   })
+}
+
+/**
+ * Reads FFmpeg's `-i` stream-information log for media-info fallback.
+ *
+ * @param {File} file Local media file.
+ * @param {{signal?: AbortSignal}} options Cancellation options.
+ * @returns {Promise<string>} FFmpeg's input-inspection log.
+ */
+export function inspectMediaInfo(file, options = {}) {
+  return runJob('inspectMediaInfo', file, options)
 }
 
 /**

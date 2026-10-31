@@ -10,11 +10,13 @@ import { useResultCardAttention } from '../../shared/hooks/useResultCardAttentio
 import { isVideoFile } from '../../shared/utils/mediaFiles.js'
 import { getMonotonicTime } from '../../shared/utils/timing.js'
 import { calculateNewDuration } from '../../shared/media/speed.js'
+import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import './speed.css'
 
 const SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
 const MAX_FILE_SIZE = 500 * 1024 * 1024
 const LONG_VIDEO_SECONDS = 3 * 60
+const UNKNOWN_MEDIA_INFO = { hasAudio: 'unknown' }
 
 function formatTime(seconds) {
   const totalSeconds = Math.max(0, Math.round(seconds))
@@ -37,6 +39,7 @@ function Speed({ tool }) {
   const [file, setFile] = useState(null)
   const [sourceUrl, setSourceUrl] = useState('')
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 })
+  const [mediaInfo, setMediaInfo] = useState(UNKNOWN_MEDIA_INFO)
   const [duration, setDuration] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -68,6 +71,20 @@ function Speed({ tool }) {
   useEffect(() => () => abortControllerRef.current?.abort(), [])
 
   useEffect(() => {
+    let active = true
+    setMediaInfo(UNKNOWN_MEDIA_INFO)
+    if (file) {
+      getMediaInfo(file).then((info) => {
+        if (active) setMediaInfo(info)
+      })
+    }
+
+    return () => {
+      active = false
+    }
+  }, [file])
+
+  useEffect(() => {
     const video = videoRef.current
     if (!video) return
 
@@ -92,6 +109,7 @@ function Speed({ tool }) {
     setFile(selectedFile)
     setSourceUrl(URL.createObjectURL(selectedFile))
     setVideoSize({ width: 0, height: 0 })
+    setMediaInfo(UNKNOWN_MEDIA_INFO)
     setDuration(0)
     setCurrentTime(0)
     setIsPlaying(false)
@@ -149,6 +167,7 @@ function Speed({ tool }) {
     setFile(null)
     setSourceUrl('')
     setVideoSize({ width: 0, height: 0 })
+    setMediaInfo(UNKNOWN_MEDIA_INFO)
     setDuration(0)
     setCurrentTime(0)
     setIsPlaying(false)
@@ -180,6 +199,7 @@ function Speed({ tool }) {
     try {
       const output = await changeSpeed(file, speed, {
         signal: controller.signal,
+        hasAudio: mediaInfo.hasAudio,
         removeAudio,
         keepAudioPitchNatural,
         onProgress: (percent) => {
@@ -364,24 +384,37 @@ function Speed({ tool }) {
                       <p><span>New length</span><strong>{formatTime(outputDuration)}</strong></p>
                     </div>
 
-                    <label className="speed-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={keepAudioPitchNatural}
-                        disabled={isExporting}
-                        onChange={(event) => setKeepAudioPitchNatural(event.target.checked)}
-                      />
-                      <span>Keep audio pitch natural</span>
-                    </label>
-                    <label className="speed-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={removeAudio}
-                        disabled={isExporting}
-                        onChange={(event) => setRemoveAudio(event.target.checked)}
-                      />
-                      <span>Remove audio</span>
-                    </label>
+                    {mediaInfo.hasAudio !== false ? (
+                      <>
+                        <label className="speed-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={keepAudioPitchNatural}
+                            disabled={isExporting}
+                            onChange={(event) => setKeepAudioPitchNatural(event.target.checked)}
+                          />
+                          <span>Keep audio pitch natural</span>
+                        </label>
+                        <label className="speed-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={removeAudio}
+                            disabled={isExporting}
+                            onChange={(event) => setRemoveAudio(event.target.checked)}
+                          />
+                          <span>Remove audio</span>
+                        </label>
+                      </>
+                    ) : (
+                      <p className="media-info-note" role="status">
+                        This video has no audio track.
+                      </p>
+                    )}
+                    {mediaInfo.hasAudio === 'unknown' && (
+                      <p className="media-info-note" role="status">
+                        Audio could not be confirmed; audio options remain available.
+                      </p>
+                    )}
                   </section>
 
                   {shouldWarnAboutFile && (
