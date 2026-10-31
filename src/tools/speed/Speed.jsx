@@ -3,12 +3,13 @@ import { changeSpeed } from '../../shared/ffmpeg/ffmpegClient.js'
 import Button from '../../shared/components/Button.jsx'
 import ProcessingBar from '../../shared/components/ProcessingBar.jsx'
 import ResultCard from '../../shared/components/ResultCard.jsx'
+import ToolLayout from '../../shared/components/ToolLayout.jsx'
 import UploadBox from '../../shared/components/UploadBox.jsx'
+import VideoPlayerControls from '../../shared/components/VideoPlayerControls.jsx'
 import { useResultCardAttention } from '../../shared/hooks/useResultCardAttention.js'
 import { isVideoFile } from '../../shared/utils/mediaFiles.js'
 import { getMonotonicTime } from '../../shared/utils/timing.js'
 import { calculateNewDuration } from '../../shared/media/speed.js'
-import '../../shared/components/toolEditor.css'
 import './speed.css'
 
 const SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
@@ -30,7 +31,7 @@ function formatSpeed(speed) {
  *
  * @returns {import('react').JSX.Element} Speed changer tool.
  */
-function Speed() {
+function Speed({ tool }) {
   const videoRef = useRef(null)
   const abortControllerRef = useRef(null)
   const [file, setFile] = useState(null)
@@ -231,13 +232,20 @@ function Speed() {
     duration > LONG_VIDEO_SECONDS || (file?.size ?? 0) > MAX_FILE_SIZE
 
   return (
-    <main className="media-tool-app speed-tool">
-      <header className="tool-header">
-        <p className="tool-eyebrow">Web Video Toolkit</p>
-        <h1>Speed changer</h1>
-        <p>Adjust playback speed and keep the result on your device.</p>
-      </header>
-
+    <ToolLayout
+      tool={tool}
+      headerAction={file && (
+        <Button
+          variant="secondary"
+          className="tool-change-button"
+          onClick={startOver}
+          disabled={isExporting}
+        >
+          Choose a different video
+        </Button>
+      )}
+    >
+      <div className="media-tool-app speed-tool">
       {!file ? (
         <section className="media-tool-upload" aria-label="Upload a video">
           <UploadBox onFileSelect={chooseFile} accept="video/*" />
@@ -245,16 +253,6 @@ function Speed() {
         </section>
       ) : (
         <>
-          <div className="choose-video-row">
-            <Button
-              variant="secondary"
-              onClick={startOver}
-              disabled={isExporting}
-            >
-              Choose a different video
-            </Button>
-          </div>
-
           {metadataError ? (
             <section className="tool-panel" aria-live="polite">
               <p className="tool-error" role="alert">{metadataError}</p>
@@ -264,7 +262,7 @@ function Speed() {
             </section>
           ) : (
             <>
-              <div className="editor-layout">
+              <div className="editor-layout speed-editor-layout">
                 <section className="tool-panel preview-panel" aria-label="Video preview">
                   <div className="panel-heading">
                     <div>
@@ -277,14 +275,7 @@ function Speed() {
                     </div>
                   </div>
 
-                  <div
-                    className="speed-preview-frame"
-                    style={{
-                      aspectRatio: hasMetadata
-                        ? `${videoSize.width} / ${videoSize.height}`
-                        : '16 / 9',
-                    }}
-                  >
+                  <div className="speed-preview-frame">
                     <video
                       ref={videoRef}
                       className="speed-source-video"
@@ -300,42 +291,26 @@ function Speed() {
                       }}
                       onPlay={() => setIsPlaying(true)}
                       onPause={() => setIsPlaying(false)}
+                      style={{
+                        aspectRatio: hasMetadata
+                          ? `${videoSize.width} / ${videoSize.height}`
+                          : '16 / 9',
+                      }}
                     />
                   </div>
 
-                  <div className="preview-controls">
-                    <button
-                      className="secondary-button"
-                      type="button"
-                      aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
-                      disabled={!hasMetadata || isExporting}
-                      onClick={togglePlayback}
-                    >
-                      {isPlaying ? 'Pause' : 'Play'}
-                    </button>
-                    <div className="time-label-row" aria-live="off">
-                      <span>{formatTime(currentTime)}</span>
-                      <span>{formatTime(duration)}</span>
-                    </div>
-                    <span className="speed-preview-rate">{formatSpeed(speed)}</span>
-                  </div>
-                  <label className="seek-control">
-                    <span className="visually-hidden">Seek video</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max={duration || 1}
-                      step="0.05"
-                      value={Math.min(currentTime, duration || 0)}
-                      aria-label="Seek video"
-                      disabled={!hasMetadata || isExporting}
-                      onChange={(event) => {
-                        const time = Number(event.target.value)
-                        if (videoRef.current) videoRef.current.currentTime = time
-                        setCurrentTime(time)
-                      }}
-                    />
-                  </label>
+                  <VideoPlayerControls
+                    currentTime={currentTime}
+                    duration={duration}
+                    isPlaying={isPlaying}
+                    disabled={!hasMetadata || isExporting}
+                    rightLabel={formatSpeed(speed)}
+                    onPlayPause={togglePlayback}
+                    onSeek={(time) => {
+                      if (videoRef.current) videoRef.current.currentTime = time
+                      setCurrentTime(time)
+                    }}
+                  />
                 </section>
 
                 <div className="editor-controls">
@@ -408,6 +383,50 @@ function Speed() {
                       <span>Remove audio</span>
                     </label>
                   </section>
+
+                  {shouldWarnAboutFile && (
+                    <p className="speed-size-warning" role="status">
+                      Long videos can be slow and use a lot of memory. Close other tabs.
+                    </p>
+                  )}
+
+                  {error && <p className="tool-error" role="alert">{error}</p>}
+                  <div className="editor-footer">
+                    {speed === 1 && hasMetadata && (
+                      <span className="no-changes-message">Choose a speed other than 1x</span>
+                    )}
+                    <Button
+                      variant={result ? 'outline' : 'primary'}
+                      className="export-button"
+                      disabled={!hasMetadata || speed === 1 || isExporting}
+                      onClick={exportVideo}
+                    >
+                      {result ? 'Export again' : 'Export video'}
+                    </Button>
+                  </div>
+
+                  {isExporting && (
+                    <ProcessingBar
+                      percent={progress}
+                      startedAt={exportStartedAt}
+                      progressUpdatedAt={progressUpdatedAt}
+                      onCancel={() => abortControllerRef.current?.abort()}
+                    />
+                  )}
+
+                  {result && (
+                    <ResultCard
+                      cardRef={cardRef}
+                      result={result}
+                      duration={result.durationLabel}
+                      resolution={result.resolution}
+                      processedWith={result.processedWith}
+                      onDownload={downloadResult}
+                      saved={saved}
+                      settingsChanged={resultSettingsChanged}
+                      highlighted={highlighted}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -416,54 +435,13 @@ function Speed() {
                   Reading video dimensions and duration…
                 </p>
               )}
-              {shouldWarnAboutFile && (
-                <p className="speed-size-warning" role="status">
-                  Long videos can be slow and use a lot of memory. Close other tabs.
-                </p>
-              )}
             </>
           )}
 
-          {error && <p className="tool-error" role="alert">{error}</p>}
-          <div className="editor-footer">
-            {speed === 1 && hasMetadata && (
-              <span className="no-changes-message">Choose a speed other than 1x</span>
-            )}
-            <Button
-              variant={result ? 'outline' : 'primary'}
-              className="export-button"
-              disabled={!hasMetadata || speed === 1 || isExporting}
-              onClick={exportVideo}
-            >
-              {result ? 'Export again' : 'Export video'}
-            </Button>
-          </div>
-
-          {isExporting && (
-            <ProcessingBar
-              percent={progress}
-              startedAt={exportStartedAt}
-              progressUpdatedAt={progressUpdatedAt}
-              onCancel={() => abortControllerRef.current?.abort()}
-            />
-          )}
-
-          {result && (
-            <ResultCard
-              cardRef={cardRef}
-              result={result}
-              duration={result.durationLabel}
-              resolution={result.resolution}
-              processedWith={result.processedWith}
-              onDownload={downloadResult}
-              saved={saved}
-              settingsChanged={resultSettingsChanged}
-              highlighted={highlighted}
-            />
-          )}
         </>
       )}
-    </main>
+      </div>
+    </ToolLayout>
   )
 }
 

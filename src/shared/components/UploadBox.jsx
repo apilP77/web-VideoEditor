@@ -1,3 +1,4 @@
+import { Upload } from 'lucide-react'
 import './mediaControls.css'
 
 /**
@@ -30,8 +31,12 @@ function UploadBox({ onFileSelect, accept = 'video/*', disabled = false }) {
           event.target.value = ''
         }}
       />
+      <span className="upload-box-icon" aria-hidden="true">
+        <Upload size={23} strokeWidth={1.8} />
+      </span>
       <span className="upload-box-title">Choose or drop a video</span>
       <span className="upload-box-help">Your video stays on this device.</span>
+      <span className="upload-box-formats">MP4, MOV, WebM, MKV, AVI and more</span>
     </label>
   )
 }

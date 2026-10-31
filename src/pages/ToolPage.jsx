@@ -42,17 +42,7 @@ function ToolPage() {
 
   const ToolComponent = tool.component
 
-  return (
-    <div className="tool-page">
-      <div className="tool-page-top">
-        <Link className="back-to-tools" to="/">
-          <ArrowLeft size={17} aria-hidden="true" />
-          Back to all tools
-        </Link>
-      </div>
-      <ToolComponent />
-    </div>
-  )
+  return <ToolComponent tool={tool} />
 }
 
 export default ToolPage

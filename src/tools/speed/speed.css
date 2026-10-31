@@ -1,25 +1,28 @@
 .speed-preview-frame {
   display: grid;
   width: 100%;
+  height: auto;
+  min-height: 180px;
   overflow: hidden;
   place-items: center;
-  border-radius: 8px;
+  border: 1px solid #302b3b;
+  border-radius: 12px;
   background: #09080c;
 }
 
 .speed-source-video {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: min(60vh, 520px);
   background: #09080c;
   object-fit: contain;
 }
 
-.speed-preview-rate {
-  flex: 0 0 auto;
-  color: #d8b4fe;
-  font-size: 0.82rem;
-  font-variant-numeric: tabular-nums;
+.speed-editor-layout .editor-controls {
+  position: sticky;
+  top: 16px;
 }
 
 .speed-settings .panel-heading {
@@ -139,6 +142,12 @@
   font-size: 0.85rem;
 }
 
+@media (max-width: 900px) {
+  .speed-editor-layout .editor-controls {
+    position: static;
+  }
+}
+
 @media (max-width: 540px) {
   .speed-settings .panel-heading {
     flex-direction: row;
@@ -151,5 +160,11 @@
 
   .preview-controls {
     flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .speed-presets .preset-button {
+    transition: none;
   }
 }

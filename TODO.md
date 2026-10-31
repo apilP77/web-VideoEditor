@@ -125,6 +125,8 @@ Legend: `[ ]` todo, `[x]` done
 - [ ] File size / duration warnings
 - [ ] Keyboard accessibility and focus states
 - [ ] Responsive layout check (desktop, tablet, mobile)
+- [x] Use a shared tool-page layout and reusable video preview controls
+- [x] Center the upload step and use a consistent responsive tool layout
 - [ ] Browser testing: Chrome, Edge, Firefox, Safari
 - [ ] Page per tool with its own title, description, and FAQ
 - [ ] Favicon and simple logo

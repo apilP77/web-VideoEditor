@@ -7,6 +7,8 @@ import {
 import Button from '../../shared/components/Button'
 import ProcessingBar from '../../shared/components/ProcessingBar'
 import ResultCard from '../../shared/components/ResultCard'
+import ToolLayout from '../../shared/components/ToolLayout'
+import VideoPlayerControls from '../../shared/components/VideoPlayerControls'
 import UploadBox from '../../shared/components/UploadBox'
 import { useResultCardAttention } from '../../shared/hooks/useResultCardAttention'
 import {
@@ -17,7 +19,6 @@ import {
 } from '../../shared/utils/cropGeometry'
 import { isVideoFile } from '../../shared/utils/mediaFiles'
 import { getMonotonicTime } from '../../shared/utils/timing'
-import '../../shared/components/toolEditor.css'
 import './cropTrim.css'
 
 const ASPECT_PRESETS = [
@@ -46,7 +47,7 @@ function sameCrop(a, b) {
  *
  * @returns {import('react').JSX.Element} Crop and trim tool.
  */
-function CropTrim() {
+function CropTrim({ tool }) {
   const videoRef = useRef(null)
   const previewRef = useRef(null)
   const dragRef = useRef(null)
@@ -447,13 +448,20 @@ function CropTrim() {
       : null
 
   return (
-    <main className="crop-trim-app">
-      <header className="tool-header">
-        <p className="tool-eyebrow">Web Video Toolkit</p>
-        <h1>Crop and trim</h1>
-        <p>Set the exact section and frame you want. Your video stays on this device.</p>
-      </header>
-
+    <ToolLayout
+      tool={tool}
+      headerAction={file && (
+        <Button
+          variant="secondary"
+          className="tool-change-button"
+          onClick={startOver}
+          disabled={isExporting}
+        >
+          Choose a different video
+        </Button>
+      )}
+    >
+      <div className="crop-trim-app">
       {!file ? (
         <section className="crop-trim-upload" aria-label="Upload a video">
           <UploadBox onFileSelect={selectFile} accept="video/*" />
@@ -461,15 +469,6 @@ function CropTrim() {
         </section>
       ) : (
         <>
-          <div className="choose-video-row">
-            <Button
-              variant="secondary"
-              onClick={startOver}
-              disabled={isExporting}
-            >
-              Choose a different video
-            </Button>
-          </div>
           {!hasMetadata && !metadataError && (
             <video
               ref={videoRef}
@@ -583,38 +582,17 @@ function CropTrim() {
                       )}
                     </div>
 
-                    <div className="preview-controls">
-                      <button
-                        className="secondary-button"
-                        type="button"
-                        aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
-                        disabled={isExporting}
-                        onClick={togglePlayback}
-                      >
-                        {isPlaying ? 'Pause' : 'Play'}
-                      </button>
-                      <div className="time-label-row" aria-live="off">
-                        <span>{formatTime(currentTime)}</span>
-                        <span>{formatTime(duration)}</span>
-                      </div>
-                    </div>
-                    <label className="seek-control">
-                      <span className="visually-hidden">Seek video</span>
-                      <input
-                        type="range"
-                        min="0"
-                        max={duration}
-                        step="0.05"
-                        value={Math.min(currentTime, duration)}
-                        aria-label="Seek video"
-                        disabled={isExporting}
-                        onChange={(event) => {
-                          const time = Number(event.target.value)
-                          if (videoRef.current) videoRef.current.currentTime = time
-                          setCurrentTime(time)
-                        }}
-                      />
-                    </label>
+                    <VideoPlayerControls
+                      currentTime={currentTime}
+                      duration={duration}
+                      isPlaying={isPlaying}
+                      disabled={isExporting}
+                      onPlayPause={togglePlayback}
+                      onSeek={(time) => {
+                        if (videoRef.current) videoRef.current.currentTime = time
+                        setCurrentTime(time)
+                      }}
+                    />
                   </section>
 
                   <div className="editor-controls">
@@ -784,7 +762,8 @@ function CropTrim() {
           )}
         </>
       )}
-    </main>
+      </div>
+    </ToolLayout>
   )
 }
 
