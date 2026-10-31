@@ -1,0 +1,52 @@
+.shared-button {
+  box-sizing: border-box;
+  display: inline-flex;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 10px 16px;
+  color: #f8f6fc;
+  font: inherit;
+  font-weight: 650;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.shared-button svg {
+  flex: 0 0 auto;
+}
+
+.shared-button-primary {
+  background: #8b5cf6;
+}
+
+.shared-button-primary:hover:not(:disabled) {
+  background: #7c3aed;
+}
+
+.shared-button-secondary {
+  border-color: #51495f;
+  background: #25222e;
+  color: #e7e1ef;
+}
+
+.shared-button-secondary:hover:not(:disabled) {
+  border-color: #a78bfa;
+  background: #302a3d;
+}
+
+.shared-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.shared-button:focus-visible {
+  outline: 3px solid #c4b5fd;
+  outline-offset: 3px;
+}

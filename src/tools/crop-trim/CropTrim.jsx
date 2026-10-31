@@ -5,8 +5,8 @@ import {
   trimVideo,
 } from '../../shared/media/engine'
 import DeviceWarning from '../../shared/components/DeviceWarning'
-import DownloadButton from '../../shared/components/DownloadButton'
 import ProgressBar from '../../shared/components/ProgressBar'
+import ResultCard from '../../shared/components/ResultCard'
 import UploadBox from '../../shared/components/UploadBox'
 import {
   displayedCropToVideoPixels,
@@ -38,7 +38,7 @@ function sameCrop(a, b) {
 }
 
 /**
- * Provides local video preview, trim and crop controls, and FFmpeg export.
+ * Provides local video preview, trim and crop controls, and video export.
  *
  * @returns {import('react').JSX.Element} Crop and trim tool.
  */
@@ -47,6 +47,7 @@ function CropTrim() {
   const previewRef = useRef(null)
   const dragRef = useRef(null)
   const abortControllerRef = useRef(null)
+  const resultHeadingRef = useRef(null)
   const [file, setFile] = useState(null)
   const [sourceUrl, setSourceUrl] = useState('')
   const [result, setResult] = useState(null)
@@ -60,9 +61,11 @@ function CropTrim() {
   const [crop, setCrop] = useState(null)
   const [activePreset, setActivePreset] = useState('Free')
   const [progress, setProgress] = useState(0)
-  const [isExporting, setIsExporting] = useState(false)
+  const [status, setStatus] = useState('idle')
+  const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [metadataError, setMetadataError] = useState('')
+  const isExporting = status === 'processing'
 
   useEffect(() => {
     if (!sourceUrl) return undefined
@@ -73,6 +76,13 @@ function CropTrim() {
     if (!result?.url) return undefined
     return () => URL.revokeObjectURL(result.url)
   }, [result])
+
+  useEffect(() => {
+    if (status !== 'done') return
+
+    window.scrollTo(0, 0)
+    resultHeadingRef.current?.focus({ preventScroll: true })
+  }, [status])
 
   useEffect(
     () => () => abortControllerRef.current?.abort(),
@@ -93,6 +103,7 @@ function CropTrim() {
     const hasVideoExtension = /\.(mp4|m4v|mov|webm|mkv|avi|ogv)$/i.test(selectedFile.name)
     if (!hasVideoType && !hasVideoExtension) {
       setError('Choose a video file to continue.')
+      setStatus('error')
       return
     }
 
@@ -100,6 +111,8 @@ function CropTrim() {
     setFile(selectedFile)
     setSourceUrl(URL.createObjectURL(selectedFile))
     setResult(null)
+    setSaved(false)
+    setStatus('idle')
     setVideoSize({ width: 0, height: 0 })
     setDuration(0)
     setCurrentTime(0)
@@ -124,6 +137,7 @@ function CropTrim() {
       video.videoHeight < 2
     ) {
       setMetadataError('This video has invalid dimensions or is too short to edit.')
+      setStatus('error')
       return
     }
 
@@ -143,6 +157,11 @@ function CropTrim() {
     setCurrentTime(0)
     setMetadataError('')
     setError('')
+  }
+
+  function handleMetadataError(message) {
+    setMetadataError(message)
+    setStatus('error')
   }
 
   function setTrimStart(value) {
@@ -196,6 +215,7 @@ function CropTrim() {
         await video.play()
       } catch {
         setError('Could not play this video in the browser.')
+        setStatus('error')
       }
     } else {
       video.pause()
@@ -302,9 +322,10 @@ function CropTrim() {
   async function exportVideo() {
     if (!file || !hasMetadata || !hasChanges) return
 
-    setIsExporting(true)
+    setStatus('processing')
     setProgress(0)
     setError('')
+    setSaved(false)
     setResult(null)
 
     const controller = new AbortController()
@@ -334,7 +355,17 @@ function CropTrim() {
         const exportCrop = getExportCrop()
         output = await cropVideo(file, exportCrop, videoSize, options)
       }
-      setResult({ ...output, url: URL.createObjectURL(output.blob) })
+      const outputDuration = trimChanged ? endTime - startTime : duration
+      const outputResolution = cropChanged
+        ? `${crop.w} × ${crop.h}`
+        : `${videoSize.width} × ${videoSize.height}`
+      setResult({
+        ...output,
+        url: URL.createObjectURL(output.blob),
+        durationLabel: formatTime(outputDuration),
+        resolution: outputResolution,
+      })
+      setStatus('done')
     } catch (caughtError) {
       if (caughtError?.name !== 'AbortError') {
         setError(
@@ -342,12 +373,14 @@ function CropTrim() {
             ? caughtError.message
             : 'Could not export this video. Check the file and try again.',
         )
+        setStatus('error')
+      } else {
+        setStatus('idle')
       }
     } finally {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null
       }
-      setIsExporting(false)
     }
   }
 
@@ -357,6 +390,7 @@ function CropTrim() {
 
   function startOver() {
     abortControllerRef.current?.abort()
+    setStatus('idle')
     setFile(null)
     setSourceUrl('')
     setResult(null)
@@ -370,6 +404,24 @@ function CropTrim() {
     setCrop(null)
     setError('')
     setMetadataError('')
+    setSaved(false)
+  }
+
+  function editAgain() {
+    setResult(null)
+    setSaved(false)
+    setError('')
+    setStatus('idle')
+  }
+
+  function downloadResult() {
+    if (!result) return
+
+    const link = document.createElement('a')
+    link.href = result.url
+    link.download = result.filename
+    link.click()
+    setSaved(true)
   }
 
   const displayedCrop =
@@ -381,6 +433,22 @@ function CropTrim() {
           height: `${(crop.h / videoSize.height) * 100}%`,
         }
       : null
+
+  if (status === 'done' && result) {
+    return (
+      <ResultCard
+        result={result}
+        duration={result.durationLabel}
+        resolution={result.resolution}
+        processedWith={result.processedWith}
+        headingRef={resultHeadingRef}
+        onDownload={downloadResult}
+        onEditAgain={editAgain}
+        onStartOver={startOver}
+        saved={saved}
+      />
+    )
+  }
 
   return (
     <main className="crop-trim-app">
@@ -407,9 +475,9 @@ function CropTrim() {
               preload="metadata"
               playsInline
               onLoadedMetadata={handleMetadata}
-              onError={() =>
-                setMetadataError('Could not read this video. Try a supported video file.')
-              }
+              onError={() => handleMetadataError(
+                'Could not read this video. Try a supported video file.',
+              )}
             />
           )}
           {metadataError ? (
@@ -447,9 +515,9 @@ function CropTrim() {
                         src={sourceUrl}
                         playsInline
                         onLoadedMetadata={handleMetadata}
-                        onError={() =>
-                          setMetadataError('Could not read this video. Try a supported video file.')
-                        }
+                        onError={() => handleMetadataError(
+                          'Could not read this video. Try a supported video file.',
+                        )}
                         onTimeUpdate={handleTimeUpdate}
                         onPlay={handlePlay}
                         onPause={() => setIsPlaying(false)}
@@ -682,22 +750,6 @@ function CropTrim() {
                 </div>
               )}
 
-              {result?.url && (
-                <section className="tool-panel result-panel" aria-labelledby="result-heading">
-                  <div className="panel-heading">
-                    <div>
-                      <h2 id="result-heading">Export ready</h2>
-                      <p>{result.filename}</p>
-                    </div>
-                    <DownloadButton result={result} />
-                  </div>
-                  <p className="processed-with">
-                    Processed with: {result.processedWith}
-                  </p>
-                  <video className="result-video" src={result.url} controls playsInline />
-                </section>
-              )}
-
               <div className="editor-footer">
                 {!hasChanges && hasMetadata && (
                   <span className="no-changes-message">Adjust the trim or crop to enable export.</span>
@@ -708,7 +760,7 @@ function CropTrim() {
                   disabled={!hasMetadata || !hasChanges || isExporting}
                   onClick={exportVideo}
                 >
-                  {isExporting ? 'Exporting…' : 'Export'}
+                  {isExporting ? 'Exporting…' : 'Export video'}
                 </button>
                 <button
                   className="text-button"
