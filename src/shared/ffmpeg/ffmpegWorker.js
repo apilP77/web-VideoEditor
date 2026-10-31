@@ -8,7 +8,7 @@ import {
   buildTrimCropArgs,
 } from './commands.js'
 
-const coreBaseUrl = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd'
+const coreBaseUrl = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm'
 
 let ffmpegInstance = null
 let ffmpegLoadPromise = null
@@ -46,8 +46,12 @@ async function getFFmpeg() {
       } catch (error) {
         instance.terminate()
         ffmpegInstance = null
+        const detail =
+          error && typeof error.message === 'string'
+            ? ` ${error.message || String(error)}`
+            : ` ${String(error)}`
         throw new Error(
-          'Could not load FFmpeg. Check your internet connection and try again.',
+          `Could not load FFmpeg. Check your internet connection and try again.${detail}`,
           { cause: error },
         )
       } finally {
