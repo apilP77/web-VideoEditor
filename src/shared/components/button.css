@@ -41,6 +41,16 @@
   background: #302a3d;
 }
 
+.shared-button-outline {
+  border-color: #a78bfa;
+  background: transparent;
+  color: #e7e1ef;
+}
+
+.shared-button-outline:hover:not(:disabled) {
+  background: rgb(167 139 250 / 12%);
+}
+
 .shared-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;

@@ -48,6 +48,11 @@
   margin: 24px auto;
 }
 
+.choose-video-row {
+  display: flex;
+  justify-content: flex-start;
+}
+
 .metadata-loader {
   position: absolute;
   width: 1px;
@@ -444,12 +449,23 @@
 
 .export-progress {
   display: flex;
-  align-items: end;
+  align-items: center;
   gap: 14px;
+  border: 1px solid #302b3b;
+  border-radius: 12px;
+  padding: 14px;
+  background: #1a1821;
 }
 
 .export-progress .progress-container {
   flex: 1;
+}
+
+.export-elapsed {
+  flex: 0 0 auto;
+  color: #b7afc6;
+  font-size: 0.84rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .cancel-button {
@@ -467,7 +483,11 @@
 }
 
 .export-button {
-  min-width: 120px;
+  min-width: 150px;
+}
+
+.editor-footer .export-button {
+  min-height: 48px;
 }
 
 .text-button {
@@ -520,6 +540,10 @@
     flex-direction: column;
   }
 
+  .export-elapsed {
+    text-align: center;
+  }
+
   .editor-footer {
     justify-content: stretch;
   }
@@ -537,7 +561,28 @@
   .secondary-button,
   .preset-button,
   .text-button,
-  .media-button {
+  .media-button,
+  .crop-handle {
     min-height: 44px;
+  }
+
+  .crop-handle {
+    width: 44px;
+    height: 44px;
+    border: 0;
+    background: transparent;
+  }
+
+  .crop-handle::before {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #6d28d9;
+    border-radius: 50%;
+    background: #fff;
+    content: "";
+    transform: translate(-50%, -50%);
   }
 }

@@ -4,6 +4,7 @@ import {
   trimAndCrop,
   trimVideo,
 } from '../../shared/media/engine'
+import Button from '../../shared/components/Button'
 import DeviceWarning from '../../shared/components/DeviceWarning'
 import ProgressBar from '../../shared/components/ProgressBar'
 import ResultCard from '../../shared/components/ResultCard'
@@ -33,6 +34,11 @@ function formatTime(seconds) {
   return `${String(minutes).padStart(2, '0')}:${remaining.toFixed(1).padStart(4, '0')}`
 }
 
+function formatElapsed(milliseconds) {
+  const seconds = Math.floor(milliseconds / 1000)
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
+}
+
 function sameCrop(a, b) {
   return a && b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
 }
@@ -47,7 +53,8 @@ function CropTrim() {
   const previewRef = useRef(null)
   const dragRef = useRef(null)
   const abortControllerRef = useRef(null)
-  const resultHeadingRef = useRef(null)
+  const resultBoxRef = useRef(null)
+  const highlightTimeoutRef = useRef(null)
   const [file, setFile] = useState(null)
   const [sourceUrl, setSourceUrl] = useState('')
   const [result, setResult] = useState(null)
@@ -62,7 +69,9 @@ function CropTrim() {
   const [activePreset, setActivePreset] = useState('Free')
   const [progress, setProgress] = useState(0)
   const [status, setStatus] = useState('idle')
+  const [elapsedMilliseconds, setElapsedMilliseconds] = useState(0)
   const [saved, setSaved] = useState(false)
+  const [resultHighlighted, setResultHighlighted] = useState(false)
   const [error, setError] = useState('')
   const [metadataError, setMetadataError] = useState('')
   const isExporting = status === 'processing'
@@ -78,11 +87,36 @@ function CropTrim() {
   }, [result])
 
   useEffect(() => {
-    if (status !== 'done') return
+    if (status !== 'processing') return undefined
 
-    window.scrollTo(0, 0)
-    resultHeadingRef.current?.focus({ preventScroll: true })
+    const startedAt = performance.now()
+    const timer = window.setInterval(() => {
+      setElapsedMilliseconds(performance.now() - startedAt)
+    }, 250)
+    return () => window.clearInterval(timer)
   }, [status])
+
+  useEffect(() => {
+    if (!result) return undefined
+
+    const frame = window.requestAnimationFrame(() => {
+      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      resultBoxRef.current?.scrollIntoView({
+        behavior: reduceMotion ? 'auto' : 'smooth',
+        block: 'center',
+      })
+      setResultHighlighted(true)
+      highlightTimeoutRef.current = window.setTimeout(
+        () => setResultHighlighted(false),
+        1400,
+      )
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(highlightTimeoutRef.current)
+    }
+  }, [result])
 
   useEffect(
     () => () => abortControllerRef.current?.abort(),
@@ -97,6 +131,14 @@ function CropTrim() {
     startTime > 0.05 || (duration > 0 && endTime < duration - 0.05)
   const cropChanged = Boolean(crop && fullCrop && !sameCrop(crop, fullCrop))
   const hasChanges = trimChanged || cropChanged
+  const resultSettingsChanged = Boolean(
+    result &&
+      result.settings &&
+      (result.settings.startTime !== startTime ||
+        result.settings.endTime !== endTime ||
+        result.settings.exactTrim !== exactTrim ||
+        !sameCrop(result.settings.crop, crop)),
+  )
 
   function selectFile(selectedFile) {
     const hasVideoType = selectedFile.type.startsWith('video/')
@@ -166,12 +208,10 @@ function CropTrim() {
 
   function setTrimStart(value) {
     setStartTime(Math.min(value, Math.max(0, endTime - MIN_TRIM_SECONDS)))
-    setResult(null)
   }
 
   function setTrimEnd(value) {
     setEndTime(Math.max(value, Math.min(duration, startTime + MIN_TRIM_SECONDS)))
-    setResult(null)
   }
 
   function setStartToNow() {
@@ -207,6 +247,7 @@ function CropTrim() {
   }
 
   async function togglePlayback() {
+    if (isExporting) return
     const video = videoRef.current
     if (!video) return
 
@@ -227,7 +268,6 @@ function CropTrim() {
     if (preset.ratio && hasMetadata) {
       setCrop(getCenteredAspectCrop(videoSize, preset.ratio))
     }
-    setResult(null)
   }
 
   function getSourceDelta(event, initial) {
@@ -265,7 +305,7 @@ function CropTrim() {
 
   function handleCropPointerMove(event) {
     const drag = dragRef.current
-    if (!drag || drag.pointerId !== event.pointerId) return
+    if (isExporting || !drag || drag.pointerId !== event.pointerId) return
 
     const delta = getSourceDelta(event, drag)
     const nextCrop =
@@ -274,7 +314,6 @@ function CropTrim() {
         : resizeCropPixels(drag.crop, drag.handle, delta.x, delta.y, videoSize)
     setCrop(nextCrop)
     setActivePreset('Free')
-    setResult(null)
   }
 
   function endCropPointer(event) {
@@ -284,6 +323,7 @@ function CropTrim() {
   }
 
   function resizeCropWithKeyboard(event, handle) {
+    if (isExporting) return
     if (!['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) {
       return
     }
@@ -295,7 +335,6 @@ function CropTrim() {
       resizeCropPixels(previousCrop, handle, deltaX, deltaY, videoSize),
     )
     setActivePreset('Free')
-    setResult(null)
   }
 
   function getExportCrop() {
@@ -324,9 +363,9 @@ function CropTrim() {
 
     setStatus('processing')
     setProgress(0)
+    setElapsedMilliseconds(0)
     setError('')
-    setSaved(false)
-    setResult(null)
+    videoRef.current?.pause()
 
     const controller = new AbortController()
     abortControllerRef.current = controller
@@ -364,7 +403,17 @@ function CropTrim() {
         url: URL.createObjectURL(output.blob),
         durationLabel: formatTime(outputDuration),
         resolution: outputResolution,
+        aspectRatio: cropChanged
+          ? crop.w / crop.h
+          : videoSize.width / videoSize.height,
+        settings: {
+          startTime,
+          endTime,
+          exactTrim,
+          crop: crop ? { ...crop } : null,
+        },
       })
+      setSaved(false)
       setStatus('done')
     } catch (caughtError) {
       if (caughtError?.name !== 'AbortError') {
@@ -375,7 +424,7 @@ function CropTrim() {
         )
         setStatus('error')
       } else {
-        setStatus('idle')
+        setStatus(result ? 'done' : 'idle')
       }
     } finally {
       if (abortControllerRef.current === controller) {
@@ -405,13 +454,7 @@ function CropTrim() {
     setError('')
     setMetadataError('')
     setSaved(false)
-  }
-
-  function editAgain() {
-    setResult(null)
-    setSaved(false)
-    setError('')
-    setStatus('idle')
+    setElapsedMilliseconds(0)
   }
 
   function downloadResult() {
@@ -434,22 +477,6 @@ function CropTrim() {
         }
       : null
 
-  if (status === 'done' && result) {
-    return (
-      <ResultCard
-        result={result}
-        duration={result.durationLabel}
-        resolution={result.resolution}
-        processedWith={result.processedWith}
-        headingRef={resultHeadingRef}
-        onDownload={downloadResult}
-        onEditAgain={editAgain}
-        onStartOver={startOver}
-        saved={saved}
-      />
-    )
-  }
-
   return (
     <main className="crop-trim-app">
       <header className="tool-header">
@@ -467,6 +494,15 @@ function CropTrim() {
         </section>
       ) : (
         <>
+          <div className="choose-video-row">
+            <Button
+              variant="secondary"
+              onClick={startOver}
+              disabled={isExporting}
+            >
+              Choose a different video
+            </Button>
+          </div>
           {!hasMetadata && !metadataError && (
             <video
               ref={videoRef}
@@ -585,6 +621,7 @@ function CropTrim() {
                         className="secondary-button"
                         type="button"
                         aria-label={isPlaying ? 'Pause preview' : 'Play preview'}
+                        disabled={isExporting}
                         onClick={togglePlayback}
                       >
                         {isPlaying ? 'Pause' : 'Play'}
@@ -603,6 +640,7 @@ function CropTrim() {
                         step="0.05"
                         value={Math.min(currentTime, duration)}
                         aria-label="Seek video"
+                        disabled={isExporting}
                         onChange={(event) => {
                           const time = Number(event.target.value)
                           if (videoRef.current) videoRef.current.currentTime = time
@@ -693,7 +731,6 @@ function CropTrim() {
                           disabled={isExporting || cropChanged}
                           onChange={(event) => {
                             setExactTrim(event.target.checked)
-                            setResult(null)
                           }}
                         />
                         <span>Exact frame trim (re-encode)</span>
@@ -741,36 +778,57 @@ function CropTrim() {
               )}
 
               {error && <p className="tool-error" role="alert">{error}</p>}
-              {isExporting && (
-                <div className="export-progress">
-                  <ProgressBar percent={progress} label="Exporting video" />
-                  <button className="secondary-button cancel-button" type="button" onClick={cancelExport}>
-                    Cancel
-                  </button>
-                </div>
-              )}
-
               <div className="editor-footer">
                 {!hasChanges && hasMetadata && (
                   <span className="no-changes-message">Adjust the trim or crop to enable export.</span>
                 )}
-                <button
-                  className="media-button export-button"
+                <Button
+                  variant={result ? 'outline' : 'primary'}
+                  className="export-button"
                   type="button"
                   disabled={!hasMetadata || !hasChanges || isExporting}
                   onClick={exportVideo}
                 >
-                  {isExporting ? 'Exporting…' : 'Export video'}
-                </button>
-                <button
-                  className="text-button"
-                  type="button"
-                  disabled={isExporting}
-                  onClick={startOver}
-                >
-                  Start over
-                </button>
+                  {result ? 'Export again' : 'Export video'}
+                </Button>
               </div>
+              {isExporting && (
+                <div className="export-progress">
+                  <ProgressBar
+                    percent={progress}
+                    label={
+                      progress < 10
+                        ? 'Preparing video'
+                        : progress >= 98
+                          ? 'Finishing export'
+                          : 'Processing video'
+                    }
+                  />
+                  <span className="export-elapsed">
+                    Elapsed: {formatElapsed(elapsedMilliseconds)}
+                  </span>
+                  <button
+                    className="secondary-button cancel-button"
+                    type="button"
+                    onClick={cancelExport}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+              {result && (
+                <ResultCard
+                  cardRef={resultBoxRef}
+                  result={result}
+                  duration={result.durationLabel}
+                  resolution={result.resolution}
+                  processedWith={result.processedWith}
+                  onDownload={downloadResult}
+                  saved={saved}
+                  settingsChanged={resultSettingsChanged}
+                  highlighted={resultHighlighted}
+                />
+              )}
             </>
           )}
         </>

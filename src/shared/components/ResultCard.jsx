@@ -17,28 +17,52 @@ function formatDuration(seconds) {
 }
 
 /**
- * Displays a completed video export as a separate success step.
+ * Displays a completed export beside its preview and download action.
  *
- * @param {{result: {url: string, filename: string, blob: Blob}, duration: string, resolution: string, processedWith: string, headingRef: import('react').RefObject<HTMLHeadingElement | null>, onDownload: () => void, onEditAgain: () => void, onStartOver: () => void, saved: boolean}} props Result metadata and actions.
- * @returns {import('react').JSX.Element} Video result screen.
+ * @param {{result: {url: string, filename: string, blob: Blob, aspectRatio: number}, duration: string, resolution: string, processedWith: string, cardRef: import('react').RefObject<HTMLElement | null>, onDownload: () => void, saved: boolean, settingsChanged: boolean, highlighted: boolean}} props Result metadata and actions.
+ * @returns {import('react').JSX.Element} Compact video result card.
  */
 function ResultCard({
   result,
   duration,
   resolution,
   processedWith,
-  headingRef,
+  cardRef,
   onDownload,
-  onEditAgain,
-  onStartOver,
   saved,
+  settingsChanged,
+  highlighted,
 }) {
   const [mediaInfo, setMediaInfo] = useState(null)
+  const currentMediaInfo = mediaInfo?.url === result.url ? mediaInfo : null
+  const aspectRatio = currentMediaInfo?.aspectRatio ?? `${result.aspectRatio} / 1`
 
   return (
-    <main className="result-screen">
-      <section className="result-card" aria-labelledby="result-heading" aria-live="polite">
-        <header className="result-success-header">
+    <article
+      ref={cardRef}
+      className={`result-card${highlighted ? ' result-card-highlighted' : ''}`}
+      aria-labelledby="result-heading"
+    >
+      <video
+        className="result-card-video"
+        src={result.url}
+        controls
+        playsInline
+        style={{ aspectRatio }}
+        onLoadedMetadata={(event) => {
+          setMediaInfo({
+            url: result.url,
+            duration: Number.isFinite(event.currentTarget.duration)
+              ? formatDuration(event.currentTarget.duration)
+              : duration,
+            resolution: `${event.currentTarget.videoWidth} × ${event.currentTarget.videoHeight}`,
+            aspectRatio: `${event.currentTarget.videoWidth} / ${event.currentTarget.videoHeight}`,
+          })
+        }}
+      />
+
+      <div className="result-card-details">
+        <header className="result-success-header" role="status" aria-live="polite">
           <svg
             aria-hidden="true"
             className="result-success-icon"
@@ -53,25 +77,10 @@ function ResultCard({
               strokeLinejoin="round"
             />
           </svg>
-          <h1 id="result-heading" ref={headingRef} tabIndex="-1">
+          <h2 id="result-heading">
             Your video is ready
-          </h1>
+          </h2>
         </header>
-
-        <video
-          className="result-card-video"
-          src={result.url}
-          controls
-          playsInline
-          onLoadedMetadata={(event) => {
-            setMediaInfo({
-              duration: Number.isFinite(event.currentTarget.duration)
-                ? formatDuration(event.currentTarget.duration)
-                : duration,
-              resolution: `${event.currentTarget.videoWidth} × ${event.currentTarget.videoHeight}`,
-            })
-          }}
-        />
 
         <dl className="result-info">
           <div>
@@ -84,17 +93,23 @@ function ResultCard({
           </div>
           <div>
             <dt>Duration</dt>
-            <dd>{mediaInfo?.duration ?? duration}</dd>
+            <dd>{currentMediaInfo?.duration ?? duration}</dd>
           </div>
           <div>
             <dt>Resolution</dt>
-            <dd>{mediaInfo?.resolution ?? resolution}</dd>
+            <dd>{currentMediaInfo?.resolution ?? resolution}</dd>
           </div>
           <div>
             <dt>Processed with</dt>
             <dd>{processedWith}</dd>
           </div>
         </dl>
+
+        {settingsChanged && (
+          <p className="result-settings-note" role="status" aria-live="polite">
+            Settings changed. Export again to update this video.
+          </p>
+        )}
 
         <div className="result-actions">
           <Button
@@ -118,13 +133,9 @@ function ResultCard({
           <p className="result-saved-message" role="status" aria-live="polite">
             {saved ? 'Saved to your downloads' : ''}
           </p>
-          <div className="result-secondary-actions">
-            <Button variant="secondary" onClick={onEditAgain}>Edit again</Button>
-            <Button variant="secondary" onClick={onStartOver}>Start over</Button>
-          </div>
         </div>
-      </section>
-    </main>
+      </div>
+    </article>
   )
 }
 
