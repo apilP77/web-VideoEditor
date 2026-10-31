@@ -91,6 +91,9 @@ the export must still work with optional audio mapping.
 
 Add the component to `src/tools/index.js` with its metadata and set `ready: true`
 when it is finished. Only ready registry entries appear on the homepage.
+Use `ProcessingRing` for staged work and provide actual stage progress only;
+unknown progress remains indeterminate. The transcript ring weights model
+loading at 25%, audio decoding at 15%, transcription at 55%, and finishing at 5%.
 
 ### Folder structure
 
@@ -109,7 +112,7 @@ src/
     batch-captions/
     crop-trim/
   shared/
-    components/            # UploadBox, ProgressBar, ProcessingBar, ToolCard, DownloadButton
+    components/            # UploadBox, ProcessingRing, ResultCard, ToolLayout
     ffmpeg/                # loader + helper functions (trim, crop, speed, extractAudio)
     whisper/               # worker + transcribe(chunk) API
     captions/              # chunking, stitching, line grouping, templates, renderer

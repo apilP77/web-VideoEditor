@@ -29,15 +29,20 @@ function clearJob(job) {
 
 function startWorkerJob(job, device) {
   job.device = device
-  const audio = new Float32Array(job.audio)
-  getWorker().postMessage({
-    type: 'transcribe',
+  const message = {
+    type: job.type,
     requestId: job.requestId,
-    audio,
     model: job.model,
     language: job.language,
     device,
-  }, [audio.buffer])
+  }
+  const transfer = []
+  if (job.audio) {
+    const audio = new Float32Array(job.audio)
+    message.audio = audio
+    transfer.push(audio.buffer)
+  }
+  getWorker().postMessage(message, transfer)
 }
 
 function makeTranscriptionError(job, message) {
@@ -139,20 +144,14 @@ function handleWorkerMessageError() {
   )
 }
 
-/**
- * Transcribes 16 kHz mono audio in a reusable Web Worker.
- *
- * @param {Float32Array} audioFloat32Array Mono audio samples at 16 kHz.
- * @param {{model?: 'fast' | 'balanced' | 'accurate', language?: string, onProgress?: (progress: {stage: string, percent: number | null, file?: string, chunk?: number, total?: number, status?: string}) => void, signal?: AbortSignal}} options Model, language, progress, and cancellation settings.
- * @returns {Promise<{language: string | null, words: Array<{word: string, start: number, end: number}>}>} Detected or selected language and timed words.
- */
-export function transcribe(
-  audioFloat32Array,
-  { model = 'balanced', language, onProgress, signal } = {},
-) {
-  if (!(audioFloat32Array instanceof Float32Array)) {
-    return Promise.reject(new TypeError('Audio must be a Float32Array.'))
-  }
+function runWhisperJob({
+  type,
+  audio = null,
+  model,
+  language,
+  onProgress,
+  signal,
+}) {
   if (signal && typeof signal.addEventListener !== 'function') {
     return Promise.reject(new TypeError('signal must be an AbortSignal.'))
   }
@@ -165,17 +164,15 @@ export function transcribe(
       new Error('A transcription is already running. Wait for it to finish.'),
     )
   }
-  if (audioFloat32Array.length === 0) {
-    return Promise.reject(new TypeError('Audio must contain at least one sample.'))
-  }
 
   const requestId = nextRequestId++
   return new Promise((resolve, reject) => {
     const job = {
+      type,
       requestId,
       resolve,
       reject,
-      audio: audioFloat32Array,
+      audio,
       model,
       language,
       device: preferredDevice || 'auto',
@@ -207,5 +204,51 @@ export function transcribe(
         ),
       )
     }
+  })
+}
+
+/**
+ * Loads the selected speech model in the reusable worker before audio decoding.
+ *
+ * @param {'fast' | 'balanced' | 'accurate'} model Model selection.
+ * @param {{onProgress?: (progress: {stage: string, percent: number | null, file?: string, loadedBytes?: number | null, totalBytes?: number | null, backend?: string, status?: string}) => void, signal?: AbortSignal}} options Progress and cancellation settings.
+ * @returns {Promise<{backend: 'webgpu' | 'wasm', prepared: true}>} Loaded backend information.
+ */
+export function prepareWhisperModel(model, { onProgress, signal } = {}) {
+  if (!['fast', 'balanced', 'accurate'].includes(model)) {
+    return Promise.reject(new TypeError('Choose a valid speech model.'))
+  }
+  return runWhisperJob({
+    type: 'prepare-model',
+    model,
+    onProgress,
+    signal,
+  })
+}
+
+/**
+ * Transcribes 16 kHz mono audio in a reusable Web Worker.
+ *
+ * @param {Float32Array} audioFloat32Array Mono audio samples at 16 kHz.
+ * @param {{model?: 'fast' | 'balanced' | 'accurate', language?: string, onProgress?: (progress: {stage: string, percent: number | null, file?: string, loadedBytes?: number | null, totalBytes?: number | null, chunk?: number, total?: number, coveredSeconds?: number, backend?: string, status?: string}) => void, signal?: AbortSignal}} options Model, language, progress, and cancellation settings.
+ * @returns {Promise<{backend: 'webgpu' | 'wasm', language: string | null, words: Array<{word: string, start: number, end: number}>}>} Backend, language, and timed words.
+ */
+export function transcribe(
+  audioFloat32Array,
+  { model = 'balanced', language, onProgress, signal } = {},
+) {
+  if (!(audioFloat32Array instanceof Float32Array)) {
+    return Promise.reject(new TypeError('Audio must be a Float32Array.'))
+  }
+  if (audioFloat32Array.length === 0) {
+    return Promise.reject(new TypeError('Audio must contain at least one sample.'))
+  }
+  return runWhisperJob({
+    type: 'transcribe',
+    audio: audioFloat32Array,
+    model,
+    language,
+    onProgress,
+    signal,
   })
 }

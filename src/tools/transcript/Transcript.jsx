@@ -7,7 +7,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import Button from '../../shared/components/Button.jsx'
-import ProcessingBar from '../../shared/components/ProcessingBar.jsx'
+import ProcessingRing from '../../shared/components/ProcessingRing.jsx'
 import ResultCard from '../../shared/components/ResultCard.jsx'
 import ToolLayout from '../../shared/components/ToolLayout.jsx'
 import UploadBox from '../../shared/components/UploadBox.jsx'
@@ -28,7 +28,10 @@ import {
   saveLatestTranscript,
 } from '../../shared/storage/transcriptStorage.js'
 import { getMonotonicTime } from '../../shared/utils/timing.js'
-import { transcribe } from '../../shared/whisper/whisperClient.js'
+import {
+  prepareWhisperModel,
+  transcribe,
+} from '../../shared/whisper/whisperClient.js'
 import './transcript.css'
 
 const MODEL_OPTIONS = [
@@ -58,6 +61,12 @@ const LANGUAGE_OPTIONS = [
   ['swedish', 'Swedish'],
 ]
 const LONG_AUDIO_SECONDS = 10 * 60
+const TRANSCRIPTION_STAGES = [
+  { id: 'loading-model', label: 'Loading model', weight: 25 },
+  { id: 'reading-audio', label: 'Reading audio', weight: 15 },
+  { id: 'transcribing', label: 'Transcribing', weight: 55 },
+  { id: 'finishing', label: 'Finishing', weight: 5 },
+]
 const LANGUAGE_NAMES = Object.fromEntries(
   LANGUAGE_OPTIONS.filter(([value]) => value !== 'auto').map(([value, name]) => [
     value,
@@ -107,14 +116,39 @@ function getLanguageLabel(language, selectedLanguage) {
   return LANGUAGE_NAMES[normalized] ?? LANGUAGE_ALIASES[normalized] ?? normalized.toUpperCase()
 }
 
-function getProgressLabel(progress) {
-  if (progress?.stage === 'loading-model') return 'Loading model'
-  if (progress?.stage === 'reading-audio') return 'Reading audio'
-  if (progress?.stage === 'finishing') return 'Finishing'
-  if (progress?.stage === 'transcribing') {
-    return `Transcribing · Chunk ${progress.chunk} of ${progress.total}`
+function formatMegabytes(bytes) {
+  if (!Number.isFinite(bytes)) return ''
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function getProgressDetail(progress, mediaInfo) {
+  if (progress?.stage === 'loading-model') {
+    const download =
+      Number.isFinite(progress.loadedBytes) && Number.isFinite(progress.totalBytes)
+        ? `${formatMegabytes(progress.loadedBytes)} of ${formatMegabytes(progress.totalBytes)}`
+        : Number.isFinite(progress.loadedBytes)
+          ? `${formatMegabytes(progress.loadedBytes)} downloaded`
+          : ''
+    const speed = Number.isFinite(progress.downloadSpeedBytesPerSecond)
+      ? `${formatMegabytes(progress.downloadSpeedBytesPerSecond)}/s`
+      : ''
+    return [
+      progress.file || 'Preparing model files',
+      download,
+      speed,
+      'First run only; cached afterwards.',
+    ].filter(Boolean).join(' · ')
   }
-  return 'Reading audio'
+  if (progress?.stage === 'reading-audio') {
+    return `Decoding audio · Length ${formatDuration(mediaInfo?.duration ?? 0)}`
+  }
+  if (progress?.stage === 'transcribing') {
+    return `Chunk ${progress.chunk ?? 0} of ${progress.total ?? 0} · ${formatDuration(progress.coveredSeconds ?? 0)} of ${formatDuration(mediaInfo?.duration ?? 0)}`
+  }
+  if (progress?.stage === 'finishing') {
+    return 'Stitching words and building segments.'
+  }
+  return ''
 }
 
 function downloadText(content, fileName, mimeType) {
@@ -136,6 +170,8 @@ function Transcript({ tool }) {
   const videoRef = useRef(null)
   const audioRef = useRef(null)
   const abortControllerRef = useRef(null)
+  const progressRef = useRef(null)
+  const lastDownloadRef = useRef(null)
   const [file, setFile] = useState(null)
   const [sourceUrl, setSourceUrl] = useState('')
   const [mediaInfo, setMediaInfo] = useState(null)
@@ -150,6 +186,7 @@ function Transcript({ tool }) {
   const [error, setError] = useState('')
   const [technicalDetails, setTechnicalDetails] = useState('')
   const [backendUsed, setBackendUsed] = useState(null)
+  const [failedStage, setFailedStage] = useState(null)
   const [result, setResult] = useState(null)
   const [resultAttentionToken, setResultAttentionToken] = useState(0)
   const [savedTranscript, setSavedTranscript] = useState(null)
@@ -253,6 +290,9 @@ function Transcript({ tool }) {
     setError('')
     setTechnicalDetails('')
     setBackendUsed(null)
+    setFailedStage(null)
+    progressRef.current = null
+    lastDownloadRef.current = null
     setPreviewNote('')
     setCopyMessage('')
     setCurrentTime(0)
@@ -270,6 +310,9 @@ function Transcript({ tool }) {
     setError('')
     setTechnicalDetails('')
     setBackendUsed(null)
+    setFailedStage(null)
+    progressRef.current = null
+    lastDownloadRef.current = null
     setPreviewNote('')
     setCopyMessage('')
     setCurrentTime(0)
@@ -290,10 +333,47 @@ function Transcript({ tool }) {
   }
 
   function updateProgress(nextProgress) {
-    setProgress(nextProgress)
+    const now = getMonotonicTime()
+    let downloadSpeedBytesPerSecond = null
+    if (
+      nextProgress.stage === 'loading-model' &&
+      Number.isFinite(nextProgress.loadedBytes)
+    ) {
+      const previous = lastDownloadRef.current
+      if (
+        previous?.file === nextProgress.file &&
+        now > previous.time &&
+        nextProgress.loadedBytes >= previous.bytes
+      ) {
+        downloadSpeedBytesPerSecond =
+          ((nextProgress.loadedBytes - previous.bytes) / (now - previous.time)) * 1000
+      }
+      lastDownloadRef.current = {
+        file: nextProgress.file,
+        bytes: nextProgress.loadedBytes,
+        time: now,
+      }
+    } else if (nextProgress.stage !== 'loading-model') {
+      lastDownloadRef.current = null
+    }
+
+    const progressWithSpeed = {
+      ...nextProgress,
+      ...(downloadSpeedBytesPerSecond > 0
+        ? { downloadSpeedBytesPerSecond }
+        : {}),
+    }
+    const previousProgress = progressRef.current
+    progressRef.current = progressWithSpeed
+    setProgress(progressWithSpeed)
     if (nextProgress.backend) setBackendUsed(nextProgress.backend)
-    if (Number.isFinite(nextProgress.percent) || Number.isFinite(nextProgress.chunk)) {
-      setProgressUpdatedAt(getMonotonicTime())
+    if (
+      previousProgress?.stage !== nextProgress.stage ||
+      previousProgress?.status !== nextProgress.status ||
+      Number.isFinite(nextProgress.percent) ||
+      Number.isFinite(nextProgress.chunk)
+    ) {
+      setProgressUpdatedAt(now)
     }
   }
 
@@ -306,22 +386,47 @@ function Transcript({ tool }) {
     videoRef.current?.pause()
     audioRef.current?.pause()
     setStatus('processing')
-    setProgress({ stage: 'reading-audio', percent: null })
+    const initialProgress = { stage: 'loading-model', percent: null }
+    progressRef.current = initialProgress
+    setProgress(initialProgress)
     setStartedAt(now)
     setProgressUpdatedAt(now)
     setError('')
     setTechnicalDetails('')
     setBackendUsed(null)
+    setFailedStage(null)
+    lastDownloadRef.current = null
     setCopyMessage('')
 
     try {
+      const preparedModel = await prepareWhisperModel(model, {
+        signal: controller.signal,
+        onProgress: updateProgress,
+      })
+      if (controller.signal.aborted) return
+      setBackendUsed(preparedModel.backend)
+
+      updateProgress({
+        stage: 'loading-model',
+        backend: preparedModel.backend,
+        percent: 100,
+      })
+      updateProgress({
+        stage: 'reading-audio',
+        backend: preparedModel.backend,
+        percent: null,
+      })
       const audio = await decodeAudio(file, {
         signal: controller.signal,
         onProgress: updateProgress,
       })
       if (controller.signal.aborted) return
+      updateProgress({
+        stage: 'reading-audio',
+        backend: preparedModel.backend,
+        percent: 100,
+      })
 
-      setProgress({ stage: 'loading-model', percent: null })
       const transcript = await transcribe(audio, {
         model,
         language: language === 'auto' ? undefined : language,
@@ -360,6 +465,7 @@ function Transcript({ tool }) {
             : 'Could not transcribe this file. Check it and try again.',
         )
         setTechnicalDetails(caughtError?.technicalDetails ?? '')
+        setFailedStage(progressRef.current?.stage ?? 'loading-model')
         setStatus('error')
       }
     } finally {
@@ -452,10 +558,7 @@ function Transcript({ tool }) {
         ? 'Transcribe again'
         : 'Transcribe'
   const actionVariant = result ? 'outline' : 'primary'
-  const progressDetail =
-    progress?.stage === 'loading-model'
-      ? [progress.file, progress.status].filter(Boolean).join(' · ')
-      : progress?.detail
+  const progressDetail = getProgressDetail(progress, mediaInfo)
 
   return (
     <ToolLayout
@@ -662,14 +765,20 @@ function Transcript({ tool }) {
                     {actionLabel}
                   </Button>
 
-                  {isProcessing && (
-                    <ProcessingBar
+                  {(isProcessing || status === 'error') && (
+                    <ProcessingRing
+                      stages={TRANSCRIPTION_STAGES}
+                      stageId={failedStage ?? progress?.stage ?? 'loading-model'}
                       percent={progress?.percent ?? null}
                       startedAt={startedAt}
                       progressUpdatedAt={progressUpdatedAt}
-                      label={getProgressLabel(progress)}
                       detail={progressDetail}
-                      onCancel={() => abortControllerRef.current?.abort()}
+                      failedStage={failedStage}
+                      onCancel={
+                        isProcessing
+                          ? () => abortControllerRef.current?.abort()
+                          : undefined
+                      }
                     />
                   )}
                 </section>

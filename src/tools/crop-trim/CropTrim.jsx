@@ -5,7 +5,7 @@ import {
   trimVideo,
 } from '../../shared/media/engine'
 import Button from '../../shared/components/Button'
-import ProcessingBar from '../../shared/components/ProcessingBar'
+import ProcessingRing from '../../shared/components/ProcessingRing'
 import ResultCard from '../../shared/components/ResultCard'
 import ToolLayout from '../../shared/components/ToolLayout'
 import VideoPlayerControls from '../../shared/components/VideoPlayerControls'
@@ -32,6 +32,7 @@ const ASPECT_PRESETS = [
 
 const MIN_TRIM_SECONDS = 0.1
 const UNKNOWN_MEDIA_INFO = { hasAudio: 'unknown' }
+const EXPORT_STAGES = [{ id: 'export', label: 'Exporting video', weight: 100 }]
 
 function formatTime(seconds) {
   const deciseconds = Math.max(0, Math.round(seconds * 10))
@@ -766,7 +767,9 @@ function CropTrim({ tool }) {
                 </Button>
               </div>
               {isExporting && (
-                <ProcessingBar
+                <ProcessingRing
+                  stages={EXPORT_STAGES}
+                  stageId="export"
                   percent={progress}
                   startedAt={exportStartedAt}
                   progressUpdatedAt={progressUpdatedAt}

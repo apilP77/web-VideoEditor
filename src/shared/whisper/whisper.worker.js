@@ -85,8 +85,65 @@ function postError(requestId, userMessage, error, extra = {}) {
   })
 }
 
-async function transcribe(request) {
-  const { requestId, audio, model, language } = request
+async function prepareForRequest(request) {
+  const { requestId, model } = request
+  const modelId = MODEL_IDS[model]
+  if (!modelId) throw new Error('Choose a valid speech model.')
+
+  const device =
+    request.device === 'wasm'
+      ? 'wasm'
+      : request.device === 'webgpu'
+        ? 'webgpu'
+        : await getWhisperBackend()
+  const alreadyLoaded =
+    loadedModelId === modelId &&
+    loadedDevice === device &&
+    loadedTranscriber
+
+  if (!alreadyLoaded) {
+    sendProgress(requestId, {
+      stage: 'loading-model',
+      backend: device,
+      percent: null,
+      status: device === 'webgpu' ? 'Preparing GPU model.' : 'Preparing CPU model.',
+    })
+  }
+
+  try {
+    return {
+      transcriber: await loadTranscriber(modelId, device, requestId),
+      device,
+    }
+  } catch (error) {
+    if (isCancelled(requestId)) return null
+
+    if (device === 'webgpu') {
+      sendProgress(requestId, {
+        stage: 'loading-model',
+        backend: 'wasm',
+        percent: null,
+        status: 'The GPU could not start. Retrying with the CPU.',
+      })
+      postError(
+        requestId,
+        'The GPU model could not start.',
+        error,
+        { retryWithWasm: true },
+      )
+    } else {
+      postError(
+        requestId,
+        'The speech model could not start. Check your connection and try again.',
+        error,
+      )
+    }
+    return null
+  }
+}
+
+async function runRequest(request, work) {
+  const { requestId } = request
   if (activeRequestId !== null) {
     postError(
       requestId,
@@ -99,53 +156,49 @@ async function transcribe(request) {
   activeRequestId = requestId
 
   try {
-    const modelId = MODEL_IDS[model]
-    if (!modelId) throw new Error('Choose a valid speech model.')
+    await work()
+  } catch (error) {
+    if (isCancelled(requestId)) {
+      self.postMessage({ type: 'cancelled', requestId })
+      return
+    }
+    postError(
+      requestId,
+      'Transcription could not finish. Check the file and try again.',
+      error,
+    )
+  } finally {
+    cancelledRequests.delete(requestId)
+    activeRequestId = null
+  }
+}
+
+async function prepareModel(request) {
+  await runRequest(request, async () => {
+    const prepared = await prepareForRequest(request)
+    if (!prepared) return
+    if (isCancelled(request.requestId)) {
+      self.postMessage({ type: 'cancelled', requestId: request.requestId })
+      return
+    }
+    self.postMessage({
+      type: 'result',
+      requestId: request.requestId,
+      result: { backend: prepared.device, prepared: true },
+    })
+  })
+}
+
+async function transcribe(request) {
+  await runRequest(request, async () => {
+    const { requestId, audio, language } = request
     if (!(audio instanceof Float32Array) || audio.length === 0) {
       throw new Error('The audio could not be decoded. Choose another file.')
     }
 
-    const device =
-      request.device === 'wasm' ? 'wasm' : await getWhisperBackend()
-    sendProgress(requestId, {
-      stage: 'loading-model',
-      backend: device,
-      percent: null,
-      status: device === 'webgpu' ? 'Preparing GPU model.' : 'Preparing CPU model.',
-    })
-
-    let transcriber
-    try {
-      transcriber = await loadTranscriber(modelId, device, requestId)
-    } catch (error) {
-      if (isCancelled(requestId)) {
-        self.postMessage({ type: 'cancelled', requestId })
-        return
-      }
-
-      if (device === 'webgpu') {
-        sendProgress(requestId, {
-          stage: 'loading-model',
-          backend: 'wasm',
-          percent: null,
-          status: 'The GPU could not start. Retrying with the CPU.',
-        })
-        postError(
-          requestId,
-          'The GPU model could not start.',
-          error,
-          { retryWithWasm: true },
-        )
-      } else {
-        postError(
-          requestId,
-          'The speech model could not start. Check your connection and try again.',
-          error,
-        )
-      }
-      return
-    }
-
+    const prepared = await prepareForRequest(request)
+    if (!prepared) return
+    const { transcriber, device } = prepared
     if (isCancelled(requestId)) {
       self.postMessage({ type: 'cancelled', requestId })
       return
@@ -159,6 +212,14 @@ async function transcribe(request) {
     const chunkCount = audioChunks.length
     const chunks = []
     let detectedLanguage = null
+    sendProgress(requestId, {
+      stage: 'transcribing',
+      backend: device,
+      percent: 0,
+      chunk: 0,
+      total: chunkCount,
+      coveredSeconds: 0,
+    })
 
     for (let index = 0; index < audioChunks.length; index += 1) {
       if (isCancelled(requestId)) {
@@ -221,20 +282,7 @@ async function transcribe(request) {
         words: stitchChunks(chunks),
       },
     })
-  } catch (error) {
-    if (isCancelled(requestId)) {
-      self.postMessage({ type: 'cancelled', requestId })
-      return
-    }
-    postError(
-      requestId,
-      'Transcription could not finish. Check the file and try again.',
-      error,
-    )
-  } finally {
-    cancelledRequests.delete(requestId)
-    activeRequestId = null
-  }
+  })
 }
 
 self.onmessage = (event) => {
@@ -245,5 +293,7 @@ self.onmessage = (event) => {
   }
   if (message.type === 'transcribe') {
     void transcribe(message)
+  } else if (message.type === 'prepare-model') {
+    void prepareModel(message)
   }
 }

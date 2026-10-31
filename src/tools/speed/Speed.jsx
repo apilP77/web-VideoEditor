@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { changeSpeed } from '../../shared/ffmpeg/ffmpegClient.js'
 import Button from '../../shared/components/Button.jsx'
-import ProcessingBar from '../../shared/components/ProcessingBar.jsx'
+import ProcessingRing from '../../shared/components/ProcessingRing.jsx'
 import ResultCard from '../../shared/components/ResultCard.jsx'
 import ToolLayout from '../../shared/components/ToolLayout.jsx'
 import UploadBox from '../../shared/components/UploadBox.jsx'
@@ -17,6 +17,7 @@ const SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
 const MAX_FILE_SIZE = 500 * 1024 * 1024
 const LONG_VIDEO_SECONDS = 3 * 60
 const UNKNOWN_MEDIA_INFO = { hasAudio: 'unknown' }
+const EXPORT_STAGES = [{ id: 'export', label: 'Exporting video', weight: 100 }]
 
 function formatTime(seconds) {
   const totalSeconds = Math.max(0, Math.round(seconds))
@@ -439,7 +440,9 @@ function Speed({ tool }) {
                   </div>
 
                   {isExporting && (
-                    <ProcessingBar
+                    <ProcessingRing
+                      stages={EXPORT_STAGES}
+                      stageId="export"
                       percent={progress}
                       startedAt={exportStartedAt}
                       progressUpdatedAt={progressUpdatedAt}
