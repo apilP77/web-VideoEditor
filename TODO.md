@@ -59,6 +59,7 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Enable word-level timestamps in Whisper output
 - [ ] Log a sample `{word, start, end}` output
 - [x] Move Whisper into a Web Worker
+- [x] Check WebGPU adapter availability and retry failed GPU model loads in a fresh WASM worker
 - [x] Model download progress UI and caching
 - [ ] Select a larger Whisper model on desktop and a lighter model on phones
 - [x] Detect and skip silence before transcription

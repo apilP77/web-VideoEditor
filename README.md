@@ -142,6 +142,12 @@ WASM when needed. The first run downloads the selected model; Transformers.js
 uses the browser cache for later runs. A user's cache may be cleared by browser
 settings. Browser memory and WebGPU support vary, so long files and the larger
 model can be slow or exceed device limits.
+The worker checks for an available WebGPU adapter before loading a model. GPU
+uses fp32 weights and WASM uses quantized q8 weights; if GPU model loading
+fails, a new worker retries on CPU. Transformers.js defaults ONNX Runtime's
+WASM modules to its versioned jsDelivr CDN. The Vite configuration does not
+set COOP/COEP headers, so it does not impose cross-origin isolation restrictions
+on those CDN requests.
 Transformers.js may not include detected-language metadata in its output; when
 it does not, the transcript shows that the language was not reported. Choosing
 a language manually records the selected language instead.

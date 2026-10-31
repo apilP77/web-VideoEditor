@@ -91,6 +91,7 @@
 }
 
 .transcript-cache-note,
+.transcript-backend-note,
 .transcript-validation-note,
 .transcript-long-warning,
 .transcript-restored-note {
@@ -98,6 +99,45 @@
   color: #aaa3b2;
   font-size: 0.82rem;
   line-height: 1.5;
+}
+
+.transcript-backend-note {
+  margin-top: -8px;
+}
+
+.transcript-error {
+  margin-bottom: 16px;
+}
+
+.transcript-error .tool-error {
+  margin: 0;
+}
+
+.transcript-error details {
+  margin-top: 8px;
+  color: #d7d0e2;
+  font-size: 0.82rem;
+}
+
+.transcript-error summary {
+  min-height: 44px;
+  align-content: center;
+  color: #aaa3b2;
+  cursor: pointer;
+}
+
+.transcript-error pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 8px 0 0;
+  border: 1px solid #55434a;
+  border-radius: 8px;
+  padding: 10px;
+  background: #171316;
+  color: #e6d9dc;
+  font: 0.76rem/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .transcript-validation-note {

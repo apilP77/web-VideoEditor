@@ -148,6 +148,8 @@ function Transcript({ tool }) {
   const [startedAt, setStartedAt] = useState(0)
   const [progressUpdatedAt, setProgressUpdatedAt] = useState(0)
   const [error, setError] = useState('')
+  const [technicalDetails, setTechnicalDetails] = useState('')
+  const [backendUsed, setBackendUsed] = useState(null)
   const [result, setResult] = useState(null)
   const [resultAttentionToken, setResultAttentionToken] = useState(0)
   const [savedTranscript, setSavedTranscript] = useState(null)
@@ -249,6 +251,8 @@ function Transcript({ tool }) {
     setProgress(null)
     setStatus('idle')
     setError('')
+    setTechnicalDetails('')
+    setBackendUsed(null)
     setPreviewNote('')
     setCopyMessage('')
     setCurrentTime(0)
@@ -264,6 +268,8 @@ function Transcript({ tool }) {
     setProgress(null)
     setStatus('idle')
     setError('')
+    setTechnicalDetails('')
+    setBackendUsed(null)
     setPreviewNote('')
     setCopyMessage('')
     setCurrentTime(0)
@@ -285,6 +291,7 @@ function Transcript({ tool }) {
 
   function updateProgress(nextProgress) {
     setProgress(nextProgress)
+    if (nextProgress.backend) setBackendUsed(nextProgress.backend)
     if (Number.isFinite(nextProgress.percent) || Number.isFinite(nextProgress.chunk)) {
       setProgressUpdatedAt(getMonotonicTime())
     }
@@ -303,6 +310,8 @@ function Transcript({ tool }) {
     setStartedAt(now)
     setProgressUpdatedAt(now)
     setError('')
+    setTechnicalDetails('')
+    setBackendUsed(null)
     setCopyMessage('')
 
     try {
@@ -320,6 +329,7 @@ function Transcript({ tool }) {
         onProgress: updateProgress,
       })
       if (controller.signal.aborted) return
+      setBackendUsed(transcript.backend)
 
       setProgress({ stage: 'finishing', percent: null })
       const text = toPlainText(transcript.words)
@@ -349,6 +359,7 @@ function Transcript({ tool }) {
             ? caughtError.message
             : 'Could not transcribe this file. Check it and try again.',
         )
+        setTechnicalDetails(caughtError?.technicalDetails ?? '')
         setStatus('error')
       }
     } finally {
@@ -613,6 +624,11 @@ function Transcript({ tool }) {
                     caches it for later runs. Approximate download size varies
                     with the browser processing backend.
                   </p>
+                  {backendUsed && (
+                    <p className="transcript-backend-note" role="status" aria-live="polite">
+                      Running on: {backendUsed === 'webgpu' ? 'GPU' : 'CPU (slower)'}
+                    </p>
+                  )}
                   {shouldWarnAboutLargeVideo && (
                     <p className="transcript-long-warning" role="status">
                       Long videos can be slow and use a lot of memory. Close other tabs.
@@ -625,7 +641,15 @@ function Transcript({ tool }) {
                   )}
 
                   {status === 'error' && (
-                    <p className="tool-error" role="alert">{error}</p>
+                    <div className="transcript-error" role="alert">
+                      <p className="tool-error">{error}</p>
+                      {technicalDetails && (
+                        <details>
+                          <summary>Details</summary>
+                          <pre>{technicalDetails}</pre>
+                        </details>
+                      )}
+                    </div>
                   )}
 
                   <Button

@@ -1,6 +1,7 @@
 let worker
 let nextRequestId = 1
 let activeJob = null
+let preferredDevice = null
 
 function createAbortError() {
   const error = new Error('Transcription was cancelled.')
@@ -23,6 +24,32 @@ function getWorker() {
 function clearJob(job) {
   if (activeJob === job) activeJob = null
   job.signal?.removeEventListener('abort', job.abortHandler)
+  job.audio = null
+}
+
+function startWorkerJob(job, device) {
+  job.device = device
+  const audio = new Float32Array(job.audio)
+  getWorker().postMessage({
+    type: 'transcribe',
+    requestId: job.requestId,
+    audio,
+    model: job.model,
+    language: job.language,
+    device,
+  }, [audio.buffer])
+}
+
+function makeTranscriptionError(job, message) {
+  const error = new Error(
+    message.userMessage || message.message || 'Transcription failed. Try again.',
+  )
+  const details = [
+    job.gpuError && `GPU attempt:\n${job.gpuError}`,
+    message.technicalDetails,
+  ].filter(Boolean)
+  error.technicalDetails = details.join('\n\n')
+  return error
 }
 
 function handleWorkerMessage(event) {
@@ -48,12 +75,40 @@ function handleWorkerMessage(event) {
     return
   }
 
+  if (
+    message.type === 'error' &&
+    message.retryWithWasm &&
+    job.device !== 'wasm' &&
+    !job.retriedWithWasm
+  ) {
+    job.gpuError = message.technicalDetails || message.message || ''
+    job.retriedWithWasm = true
+    worker?.terminate()
+    worker = undefined
+    try {
+      preferredDevice = 'wasm'
+      startWorkerJob(job, 'wasm')
+    } catch (error) {
+      clearJob(job)
+      job.reject(
+        makeTranscriptionError(job, {
+          userMessage:
+            'The speech model could not start. Check your connection and try again.',
+          technicalDetails:
+            error instanceof Error ? error.stack || error.message : String(error),
+        }),
+      )
+    }
+    return
+  }
+
   clearJob(job)
   if (message.type === 'cancelled') {
     job.reject(createAbortError())
   } else if (message.type === 'error') {
-    job.reject(new Error(message.message || 'Transcription failed. Try again.'))
+    job.reject(makeTranscriptionError(job, message))
   } else if (message.type === 'result') {
+    preferredDevice = message.result.backend || job.device
     job.resolve(message.result)
   } else {
     job.reject(new Error('The speech worker returned an unknown response.'))
@@ -115,17 +170,17 @@ export function transcribe(
   }
 
   const requestId = nextRequestId++
-  const samples =
-    audioFloat32Array.byteOffset === 0 &&
-    audioFloat32Array.byteLength === audioFloat32Array.buffer.byteLength
-      ? audioFloat32Array
-      : new Float32Array(audioFloat32Array)
-
   return new Promise((resolve, reject) => {
     const job = {
       requestId,
       resolve,
       reject,
+      audio: audioFloat32Array,
+      model,
+      language,
+      device: preferredDevice || 'auto',
+      retriedWithWasm: false,
+      gpuError: '',
       onProgress,
       signal,
       abortHandler: null,
@@ -140,10 +195,7 @@ export function transcribe(
     signal?.addEventListener('abort', job.abortHandler, { once: true })
 
     try {
-      getWorker().postMessage(
-        { type: 'transcribe', requestId, audio: samples, model, language },
-        [samples.buffer],
-      )
+      startWorkerJob(job, job.device)
       if (signal?.aborted) job.abortHandler()
     } catch (error) {
       clearJob(job)
