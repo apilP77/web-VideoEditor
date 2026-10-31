@@ -20,7 +20,7 @@ Inspired by "Oh So Simple" free video tools, with a focus on karaoke-style capti
 |---|------|-------------|
 | 1 | **Captions generator** | Auto-transcribes speech, edits timed words, controls subtitle pace and style, and exports burned-in MP4, SRT, VTT, or TXT |
 | 2 | **Transcript generator** | Transcribes video or audio to an editable, timed transcript and exports `.txt`, `.srt`, or `.vtt` |
-| 3 | **Speed changer** | Make a video faster or slower (shorter or longer), audio pitch preserved |
+| 3 | **Speed changer** | Change a video's speed, choose whether audio pitch stays natural, and preview the result |
 | 4 | **Batch captions** | Process several videos one at a time with shared settings and per-item review |
 | 5 | **Crop and trim** | Set start/end points and a crop area in one screen; presets for 9:16, 4:5, 1:1, 16:9 |
 
@@ -93,7 +93,7 @@ src/
     batch-captions/
     crop-trim/
   shared/
-    components/            # UploadBox, ProgressBar, ToolCard, DeviceWarning, DownloadButton
+    components/            # UploadBox, ProgressBar, ProcessingBar, ToolCard, DownloadButton
     ffmpeg/                # loader + helper functions (trim, crop, speed, extractAudio)
     whisper/               # worker + transcribe(chunk) API
     captions/              # chunking, stitching, line grouping, templates, renderer
@@ -149,7 +149,7 @@ Save recent transcripts in IndexedDB for 14 days so users can return to their wo
 
 ## Constraints and Honest Limits
 
-- Processing speed depends on the user's hardware. Show a device warning on mobile; recommend desktop Chrome.
+- Processing speed depends on the user's hardware; mobile browsers may have stricter memory limits.
 - First transcription downloads a Whisper model (approximately 170-340 MB, depending on the model). Show a progress bar and cache it.
 - Very large or 4K files may exceed browser memory. Warn users and set a soft file size limit.
 - Browsers differ in codec support. Test Chrome, Edge, Firefox, Safari.

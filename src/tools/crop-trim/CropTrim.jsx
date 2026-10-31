@@ -5,16 +5,19 @@ import {
   trimVideo,
 } from '../../shared/media/engine'
 import Button from '../../shared/components/Button'
-import DeviceWarning from '../../shared/components/DeviceWarning'
-import ProgressBar from '../../shared/components/ProgressBar'
+import ProcessingBar from '../../shared/components/ProcessingBar'
 import ResultCard from '../../shared/components/ResultCard'
 import UploadBox from '../../shared/components/UploadBox'
+import { useResultCardAttention } from '../../shared/hooks/useResultCardAttention'
 import {
   displayedCropToVideoPixels,
   getCenteredAspectCrop,
   moveCropPixels,
   resizeCropPixels,
 } from '../../shared/utils/cropGeometry'
+import { isVideoFile } from '../../shared/utils/mediaFiles'
+import { getMonotonicTime } from '../../shared/utils/timing'
+import '../../shared/components/toolEditor.css'
 import './cropTrim.css'
 
 const ASPECT_PRESETS = [
@@ -34,11 +37,6 @@ function formatTime(seconds) {
   return `${String(minutes).padStart(2, '0')}:${remaining.toFixed(1).padStart(4, '0')}`
 }
 
-function formatElapsed(milliseconds) {
-  const seconds = Math.floor(milliseconds / 1000)
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
-}
-
 function sameCrop(a, b) {
   return a && b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h
 }
@@ -53,8 +51,6 @@ function CropTrim() {
   const previewRef = useRef(null)
   const dragRef = useRef(null)
   const abortControllerRef = useRef(null)
-  const resultBoxRef = useRef(null)
-  const highlightTimeoutRef = useRef(null)
   const [file, setFile] = useState(null)
   const [sourceUrl, setSourceUrl] = useState('')
   const [result, setResult] = useState(null)
@@ -67,11 +63,11 @@ function CropTrim() {
   const [exactTrim, setExactTrim] = useState(false)
   const [crop, setCrop] = useState(null)
   const [activePreset, setActivePreset] = useState('Free')
-  const [progress, setProgress] = useState(0)
+  const [progress, setProgress] = useState(null)
   const [status, setStatus] = useState('idle')
-  const [elapsedMilliseconds, setElapsedMilliseconds] = useState(0)
+  const [exportStartedAt, setExportStartedAt] = useState(0)
+  const [progressUpdatedAt, setProgressUpdatedAt] = useState(0)
   const [saved, setSaved] = useState(false)
-  const [resultHighlighted, setResultHighlighted] = useState(false)
   const [error, setError] = useState('')
   const [metadataError, setMetadataError] = useState('')
   const isExporting = status === 'processing'
@@ -86,42 +82,13 @@ function CropTrim() {
     return () => URL.revokeObjectURL(result.url)
   }, [result])
 
-  useEffect(() => {
-    if (status !== 'processing') return undefined
-
-    const startedAt = performance.now()
-    const timer = window.setInterval(() => {
-      setElapsedMilliseconds(performance.now() - startedAt)
-    }, 250)
-    return () => window.clearInterval(timer)
-  }, [status])
-
-  useEffect(() => {
-    if (!result) return undefined
-
-    const frame = window.requestAnimationFrame(() => {
-      const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      resultBoxRef.current?.scrollIntoView({
-        behavior: reduceMotion ? 'auto' : 'smooth',
-        block: 'center',
-      })
-      setResultHighlighted(true)
-      highlightTimeoutRef.current = window.setTimeout(
-        () => setResultHighlighted(false),
-        1400,
-      )
-    })
-
-    return () => {
-      window.cancelAnimationFrame(frame)
-      window.clearTimeout(highlightTimeoutRef.current)
-    }
-  }, [result])
-
   useEffect(
     () => () => abortControllerRef.current?.abort(),
     [],
   )
+
+  const { cardRef: resultBoxRef, highlighted: resultHighlighted } =
+    useResultCardAttention(result)
 
   const hasMetadata = videoSize.width > 0 && duration > 0
   const fullCrop = hasMetadata
@@ -141,9 +108,7 @@ function CropTrim() {
   )
 
   function selectFile(selectedFile) {
-    const hasVideoType = selectedFile.type.startsWith('video/')
-    const hasVideoExtension = /\.(mp4|m4v|mov|webm|mkv|avi|ogv)$/i.test(selectedFile.name)
-    if (!hasVideoType && !hasVideoExtension) {
+    if (!isVideoFile(selectedFile)) {
       setError('Choose a video file to continue.')
       setStatus('error')
       return
@@ -362,8 +327,10 @@ function CropTrim() {
     if (!file || !hasMetadata || !hasChanges) return
 
     setStatus('processing')
-    setProgress(0)
-    setElapsedMilliseconds(0)
+    setProgress(null)
+    const startedAt = getMonotonicTime()
+    setExportStartedAt(startedAt)
+    setProgressUpdatedAt(startedAt)
     setError('')
     videoRef.current?.pause()
 
@@ -372,7 +339,10 @@ function CropTrim() {
     try {
       const options = {
         signal: controller.signal,
-        onProgress: setProgress,
+        onProgress: (percent) => {
+          setProgress(percent)
+          setProgressUpdatedAt(getMonotonicTime())
+        },
       }
       let output
       if (trimChanged && cropChanged) {
@@ -454,7 +424,6 @@ function CropTrim() {
     setError('')
     setMetadataError('')
     setSaved(false)
-    setElapsedMilliseconds(0)
   }
 
   function downloadResult() {
@@ -484,8 +453,6 @@ function CropTrim() {
         <h1>Crop and trim</h1>
         <p>Set the exact section and frame you want. Your video stays on this device.</p>
       </header>
-
-      <DeviceWarning />
 
       {!file ? (
         <section className="crop-trim-upload" aria-label="Upload a video">
@@ -793,28 +760,12 @@ function CropTrim() {
                 </Button>
               </div>
               {isExporting && (
-                <div className="export-progress">
-                  <ProgressBar
-                    percent={progress}
-                    label={
-                      progress < 10
-                        ? 'Preparing video'
-                        : progress >= 98
-                          ? 'Finishing export'
-                          : 'Processing video'
-                    }
-                  />
-                  <span className="export-elapsed">
-                    Elapsed: {formatElapsed(elapsedMilliseconds)}
-                  </span>
-                  <button
-                    className="secondary-button cancel-button"
-                    type="button"
-                    onClick={cancelExport}
-                  >
-                    Cancel
-                  </button>
-                </div>
+                <ProcessingBar
+                  percent={progress}
+                  startedAt={exportStartedAt}
+                  progressUpdatedAt={progressUpdatedAt}
+                  onCancel={cancelExport}
+                />
               )}
               {result && (
                 <ResultCard

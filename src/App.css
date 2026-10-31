@@ -65,28 +65,6 @@
   flex: 1;
 }
 
-.home-device-warning {
-  margin-top: 16px;
-}
-
-.device-warning-compact {
-  min-height: 34px;
-  align-items: center;
-  justify-content: center;
-  gap: 3px 6px;
-  border: 0;
-  border-radius: 7px;
-  padding: 6px 12px;
-  background: rgb(125 96 165 / 10%);
-  color: #aaa0bb;
-  font-size: 0.72rem;
-  text-align: center;
-}
-
-.device-warning-compact strong {
-  color: #cabbdf;
-}
-
 .home-hero {
   max-width: 860px;
   margin: 0 auto;
@@ -426,15 +404,6 @@
 
   .privacy-label svg {
     flex: 0 0 auto;
-  }
-
-  .home-device-warning {
-    margin-top: 10px;
-  }
-
-  .device-warning-compact {
-    justify-content: flex-start;
-    font-size: 0.66rem;
   }
 
   .home-hero {

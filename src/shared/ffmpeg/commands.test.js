@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildAtempoChain,
   buildCropArgs,
   buildExtractAudioArgs,
   buildSpeedArgs,
@@ -89,6 +90,49 @@ describe('buildSpeedArgs', () => {
     expect(() => buildSpeedArgs('in.mp4', 'out.mp4', 0)).toThrow(
       'Speed factor must be a positive finite number.',
     )
+  })
+
+  it.each([
+    [4, 'atempo=2.0,atempo=2.0'],
+    [0.25, 'atempo=0.5,atempo=0.5'],
+    [3, 'atempo=2.0,atempo=1.5'],
+    [0.75, 'atempo=0.75'],
+  ])('chains audio tempo stages for %sx speed', (factor, expected) => {
+    expect(buildAtempoChain(factor)).toBe(expected)
+  })
+
+  it('includes audio settings when the input has audio', () => {
+    const args = buildSpeedArgs('input.mp4', 'output.mp4', 2, { hasAudio: true })
+
+    expect(args).toContain('-map')
+    expect(args).toContain('0:a?')
+    expect(args).toContain('-filter:a')
+    expect(args).toContain('-c:a')
+    expect(args).toContain('-b:a')
+  })
+
+  it('omits audio settings when audio is removed', () => {
+    const args = buildSpeedArgs('input.mp4', 'output.mp4', 2, {
+      hasAudio: true,
+      removeAudio: true,
+    })
+
+    expect(args.join(' ')).not.toMatch(/(?:-map 0:a|-filter:a|-c:a|-b:a)/)
+  })
+
+  it('omits audio settings when the input has no audio', () => {
+    const args = buildSpeedArgs('input.mp4', 'output.mp4', 2, { hasAudio: false })
+
+    expect(args.join(' ')).not.toMatch(/(?:-map 0:a|-filter:a|-c:a|-b:a)/)
+  })
+
+  it('changes audio pitch when natural pitch is disabled', () => {
+    const args = buildSpeedArgs('input.mp4', 'output.mp4', 2, {
+      hasAudio: true,
+      keepAudioPitchNatural: false,
+    })
+
+    expect(args).toContain('aresample=44100,asetrate=88200,aresample=44100')
   })
 })
 

@@ -1,4 +1,5 @@
 import CropTrim from './crop-trim/CropTrim.jsx'
+import Speed from './speed/Speed.jsx'
 
 // Set ready: true when a tool is finished.
 export const tools = [
@@ -26,8 +27,8 @@ export const tools = [
     description: 'Slow down or speed up a clip while keeping its audio in sync.',
     icon: 'Gauge',
     accent: 'amber',
-    ready: false,
-    component: null,
+    ready: true,
+    component: Speed,
   },
   {
     id: 'batch-captions',

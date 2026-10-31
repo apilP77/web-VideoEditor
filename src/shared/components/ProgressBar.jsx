@@ -3,19 +3,20 @@ import './mediaControls.css'
 /**
  * Displays processing progress with an accessible label.
  *
- * @param {{percent: number, label?: string}} props Progress values.
+ * @param {{percent: number | null, label?: string}} props Progress values. A null percent renders indeterminate progress.
  * @returns {import('react').JSX.Element} Progress indicator.
  */
 function ProgressBar({ percent, label = 'Processing' }) {
-  const safePercent = Number.isFinite(percent)
+  const hasPercent = Number.isFinite(percent)
+  const safePercent = hasPercent
     ? Math.max(0, Math.min(100, percent))
-    : 0
+    : undefined
 
   return (
     <div className="progress-container">
       <div className="progress-label">
         <span>{label}</span>
-        <span>{Math.round(safePercent)}%</span>
+        <span>{hasPercent ? `${Math.round(safePercent)}%` : 'Working…'}</span>
       </div>
       <progress
         className="progress-bar"

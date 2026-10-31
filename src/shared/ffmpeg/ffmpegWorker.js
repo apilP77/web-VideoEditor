@@ -106,7 +106,7 @@ function getOutputDetails(job) {
   }
 }
 
-function getCommand(job, inputPath, outputPath) {
+function getCommand(job, inputPath, outputPath, hasAudio = true) {
   switch (job.type) {
     case 'trim':
       return buildTrimArgs(inputPath, outputPath, job.start, job.end, {
@@ -124,12 +124,49 @@ function getCommand(job, inputPath, outputPath) {
         job.videoSize,
       )
     case 'changeSpeed':
-      return buildSpeedArgs(inputPath, outputPath, job.factor)
+      return buildSpeedArgs(inputPath, outputPath, job.factor, {
+        hasAudio,
+        removeAudio: job.removeAudio,
+        keepAudioPitchNatural: job.keepAudioPitchNatural,
+      })
     case 'extractAudio':
       return buildExtractAudioArgs(inputPath, outputPath)
     default:
       throw new Error('Unsupported FFmpeg operation.')
   }
+}
+
+async function detectAudioTrack(ffmpeg, inputPath, probePath, signal) {
+  const exitCode = await ffmpeg.ffprobe(
+    [
+      '-v', 'error',
+      '-select_streams', 'a:0',
+      '-show_entries', 'stream=codec_type',
+      '-of', 'json',
+      inputPath,
+      '-o', probePath,
+    ],
+    -1,
+    { signal },
+  )
+
+  if (exitCode !== 0) {
+    throw new Error('Could not inspect the video’s audio tracks.')
+  }
+
+  const probeOutput = await ffmpeg.readFile(probePath, 'utf8', { signal })
+  const probeText =
+    typeof probeOutput === 'string'
+      ? probeOutput
+      : new TextDecoder().decode(probeOutput)
+  let probeResult
+  try {
+    probeResult = JSON.parse(probeText)
+  } catch (error) {
+    throw new Error('Could not inspect the video’s audio tracks.', { cause: error })
+  }
+  return Array.isArray(probeResult.streams) &&
+    probeResult.streams.some((stream) => stream.codec_type === 'audio')
 }
 
 function postJobError(requestId, error, cleanupErrors = []) {
@@ -160,6 +197,7 @@ async function processJobInner(job) {
 
   let inputPath
   let outputPath
+  let probePath
   let ffmpeg
   let progressHandler
   let result
@@ -167,6 +205,7 @@ async function processJobInner(job) {
   let jobError
   let inputMayExist = false
   let outputMayExist = false
+  let probeMayExist = false
   const cleanupErrors = []
 
   try {
@@ -179,19 +218,39 @@ async function processJobInner(job) {
     resultDetails = getOutputDetails(job)
     inputPath = `input-${job.requestId}.${inputExtension}`
     outputPath = `output-${job.requestId}.${resultDetails.extension}`
-    const args = getCommand(job, inputPath, outputPath)
 
-    self.postMessage({ type: 'progress', requestId: job.requestId, percent: 5 })
+    if (job.type !== 'changeSpeed') {
+      self.postMessage({ type: 'progress', requestId: job.requestId, percent: 5 })
+    }
     inputMayExist = true
     await ffmpeg.writeFile(inputPath, new Uint8Array(job.fileData), {
       signal: controller.signal,
     })
-    self.postMessage({ type: 'progress', requestId: job.requestId, percent: 10 })
+    let hasAudio = true
+    if (job.type === 'changeSpeed') {
+      hasAudio = false
+      if (!job.removeAudio) {
+        probePath = `probe-${job.requestId}.txt`
+        probeMayExist = true
+        hasAudio = await detectAudioTrack(
+          ffmpeg,
+          inputPath,
+          probePath,
+          controller.signal,
+        )
+      }
+    } else {
+      self.postMessage({ type: 'progress', requestId: job.requestId, percent: 10 })
+    }
+    const args = getCommand(job, inputPath, outputPath, hasAudio)
 
     progressHandler = ({ progress }) => {
-      const percent = Number.isFinite(progress)
-        ? Math.min(95, 10 + progress * 85)
-        : 10
+      if (job.type === 'changeSpeed' && !Number.isFinite(progress)) return
+      const percent = job.type === 'changeSpeed'
+        ? Math.min(99, Math.max(0, progress * 100))
+        : Number.isFinite(progress)
+          ? Math.min(95, 10 + progress * 85)
+          : 10
       self.postMessage({ type: 'progress', requestId: job.requestId, percent })
     }
     ffmpeg.on('progress', progressHandler)
@@ -228,6 +287,7 @@ async function processJobInner(job) {
       ? []
       : [
           [inputPath, inputMayExist],
+          [probePath, probeMayExist],
           [outputPath, outputMayExist],
         ]
     for (const [path, mayExist] of cleanupPaths) {

@@ -22,7 +22,6 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Build `ToolPage` that loads a tool by route `/tool/:id`
 - [ ] Build shared `UploadBox` (drag and drop + click to select, accepts video)
 - [ ] Build shared `ProgressBar` and `DownloadButton`
-- [x] Build `DeviceWarning` banner for mobile / low-memory devices
 - [x] Add a privacy note: "Your videos never leave your device"
 
 ## Phase 2: FFmpeg foundation
@@ -48,10 +47,11 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Prefer the WebCodecs engine for crop and trim with an FFmpeg fallback
 
 ## Phase 4: Speed changer tool
-- [ ] Upload and preview
-- [ ] Speed selector (0.25x to 4x) with presets and custom value
-- [ ] Show estimated new duration
-- [ ] Run `changeSpeed`, preview result, download
+- [x] Upload and preview
+- [x] Speed selector (0.25x to 4x) with presets and custom value
+- [x] Show estimated new duration
+- [x] Run `changeSpeed`, preview result, download
+- [x] Unit tests for duration calculations, atempo filters, and audio arguments
 - [ ] Test audio stays in sync and pitch is preserved
 
 ## Phase 5: Transcription engine (the hard part)

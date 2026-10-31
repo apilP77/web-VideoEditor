@@ -236,11 +236,11 @@ export function trimAndCrop(file, start, end, crop, videoSize, options = {}) {
 }
 
 /**
- * Changes video speed while keeping audio pitch through chained atempo filters.
+ * Changes video speed and optionally keeps audio, preserving its natural pitch.
  *
  * @param {File} file Local video file.
  * @param {number} factor Playback speed multiplier; values above 1 are faster.
- * @param {{signal?: AbortSignal, onProgress?: (percent: number) => void}} options Cancellation and progress options.
+ * @param {{signal?: AbortSignal, onProgress?: (percent: number) => void, removeAudio?: boolean, keepAudioPitchNatural?: boolean}} options Cancellation, progress, and audio settings.
  * @returns {Promise<{blob: Blob, filename: string}>} Speed-adjusted video and suggested filename.
  */
 export function changeSpeed(file, factor, options = {}) {
@@ -250,7 +250,14 @@ export function changeSpeed(file, factor, options = {}) {
     )
   }
 
-  return runJob('changeSpeed', file, { ...options, jobData: { factor } })
+  return runJob('changeSpeed', file, {
+    ...options,
+    jobData: {
+      factor,
+      removeAudio: options.removeAudio === true,
+      keepAudioPitchNatural: options.keepAudioPitchNatural !== false,
+    },
+  })
 }
 
 /**

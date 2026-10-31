@@ -1,6 +1,5 @@
 import { Ellipsis, ExternalLink, LockKeyhole } from 'lucide-react'
 import { Link } from 'react-router-dom'
-import DeviceWarning from '../shared/components/DeviceWarning'
 import ToolCard from '../shared/components/ToolCard'
 import { usePageMeta } from '../shared/hooks/usePageMeta'
 import { tools } from '../tools/index.js'
@@ -34,10 +33,6 @@ function Home() {
       </header>
 
       <main className="home-main">
-        <div className="home-device-warning">
-          <DeviceWarning compact />
-        </div>
-
         <section className="home-hero" aria-labelledby="home-heading">
           <span className="hero-kicker">Simple tools. Your device. Your files.</span>
           <h1 id="home-heading">

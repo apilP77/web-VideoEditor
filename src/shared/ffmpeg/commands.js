@@ -142,7 +142,17 @@ export function buildTrimCropArgs(inputPath, outputPath, start, end, crop, video
   ]
 }
 
-function buildAtempoChain(factor) {
+/**
+ * Builds an atempo filter chain whose individual stages stay in FFmpeg's supported range.
+ *
+ * @param {number} factor Playback-speed multiplier.
+ * @returns {string} Comma-separated atempo filters.
+ */
+export function buildAtempoChain(factor) {
+  if (!Number.isFinite(factor) || factor <= 0) {
+    throw new RangeError('Speed factor must be a positive finite number.')
+  }
+
   let remaining = factor
   const filters = []
 
@@ -167,28 +177,43 @@ function buildAtempoChain(factor) {
  * @param {string} inputPath FFmpeg virtual filesystem input path.
  * @param {string} outputPath FFmpeg virtual filesystem output path.
  * @param {number} factor Playback speed multiplier; values above 1 are faster.
+ * @param {{hasAudio?: boolean, removeAudio?: boolean, keepAudioPitchNatural?: boolean}} options Audio stream and pitch settings.
  * @returns {string[]} FFmpeg arguments.
  */
-export function buildSpeedArgs(inputPath, outputPath, factor) {
+export function buildSpeedArgs(
+  inputPath,
+  outputPath,
+  factor,
+  { hasAudio = true, removeAudio = false, keepAudioPitchNatural = true } = {},
+) {
   if (!Number.isFinite(factor) || factor <= 0) {
     throw new RangeError('Speed factor must be a positive finite number.')
   }
 
-  return [
+  const args = [
     '-i', inputPath,
     '-map', '0:v:0',
-    '-map', '0:a?',
     '-filter:v', `setpts=PTS/${formatNumber(factor)}`,
-    '-filter:a', buildAtempoChain(factor),
     '-c:v', 'libx264',
     '-preset', 'ultrafast',
     '-crf', '28',
     '-pix_fmt', 'yuv420p',
-    '-c:a', 'aac',
-    '-b:a', '128k',
-    '-movflags', '+faststart',
-    outputPath,
   ]
+
+  if (hasAudio && !removeAudio) {
+    const audioFilter = keepAudioPitchNatural
+      ? buildAtempoChain(factor)
+      : `aresample=44100,asetrate=${formatNumber(44100 * factor)},aresample=44100`
+    args.push(
+      '-map', '0:a?',
+      '-filter:a', audioFilter,
+      '-c:a', 'aac',
+      '-b:a', '128k',
+    )
+  }
+
+  args.push('-movflags', '+faststart', outputPath)
+  return args
 }
 
 /**

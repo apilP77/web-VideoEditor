@@ -86,19 +86,3 @@
   outline: 2px solid #c4b5fd;
   outline-offset: 3px;
 }
-
-.device-warning {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 8px;
-  border: 1px solid #55436f;
-  border-radius: 10px;
-  padding: 12px 14px;
-  background: #211b2c;
-  color: #ddd3ed;
-  font-size: 0.9rem;
-}
-
-.device-warning strong {
-  color: #e9d5ff;
-}
