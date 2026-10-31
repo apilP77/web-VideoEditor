@@ -9,21 +9,21 @@ Legend: `[ ]` todo, `[x]` done
 ## Phase 0: Project setup
 - [x] Create Vite + React project
 - [ ] Install Tailwind CSS and set up a dark theme (background, text, accent purple)
-- [ ] Install `react-router-dom` and `lucide-react`
+- [x] Install `react-router-dom` and `lucide-react`
 - [ ] Add COOP/COEP headers to `vite.config.js` dev server
 - [ ] Create folder structure from the README
 - [ ] Add `.gitignore`, commit, push to GitHub
 
 ## Phase 1: Shell and tool registry
-- [ ] Create `src/tools/index.js` registry with the 5 tools (placeholder components)
-- [ ] Build `ToolCard` component (icon, title, description, arrow)
-- [ ] Build `Home` page: heading, subtitle, responsive grid generated from the registry (4 / 2 / 1 columns)
-- [ ] Add a "More on the way" card at the end
-- [ ] Build `ToolPage` that loads a tool by route `/tool/:id`
+- [x] Create `src/tools/index.js` registry with the 5 tools (placeholder components)
+- [x] Build `ToolCard` component (icon, title, description, arrow)
+- [x] Build `Home` page: heading, subtitle, responsive grid generated from the registry (4 / 3 / 2 / 1 columns)
+- [x] Add a "More on the way" card at the end
+- [x] Build `ToolPage` that loads a tool by route `/tool/:id`
 - [ ] Build shared `UploadBox` (drag and drop + click to select, accepts video)
 - [ ] Build shared `ProgressBar` and `DownloadButton`
-- [ ] Build `DeviceWarning` banner for mobile / low-memory devices
-- [ ] Add a privacy note: "Your videos never leave your device"
+- [x] Build `DeviceWarning` banner for mobile / low-memory devices
+- [x] Add a privacy note: "Your videos never leave your device"
 
 ## Phase 2: FFmpeg foundation
 - [x] Write `shared/ffmpeg/loader` that loads FFmpeg.wasm once and reuses it

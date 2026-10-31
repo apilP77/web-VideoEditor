@@ -1,9 +1,18 @@
-import { tools } from './tools/index.js'
+import { BrowserRouter, Route, Routes } from 'react-router-dom'
+import './App.css'
+import Home from './pages/Home.jsx'
+import ToolPage from './pages/ToolPage.jsx'
 
 function App() {
-  const tool = tools.find(({ id }) => id === 'crop-trim')
-  const ToolComponent = tool.component
-  return <ToolComponent />
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/tool/:toolId" element={<ToolPage />} />
+        <Route path="*" element={<ToolPage />} />
+      </Routes>
+    </BrowserRouter>
+  )
 }
 
 export default App
