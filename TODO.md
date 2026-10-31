@@ -56,29 +56,30 @@ Legend: `[ ]` todo, `[x]` done
 
 ## Phase 5: Transcription engine (the hard part)
 - [ ] Spike: run Whisper via Transformers.js on a 10 s WAV in the browser
-- [ ] Enable word-level timestamps and log `{word, start, end}` output
-- [ ] Move Whisper into a Web Worker
-- [ ] Model download progress UI and caching
+- [x] Enable word-level timestamps in Whisper output
+- [ ] Log a sample `{word, start, end}` output
+- [x] Move Whisper into a Web Worker
+- [x] Model download progress UI and caching
 - [ ] Select a larger Whisper model on desktop and a lighter model on phones
-- [ ] Detect and skip silence before transcription
-- [ ] Chunking: split audio into ~30 s chunks with ~1 s overlap
-- [ ] Sequential chunk transcription with per-chunk progress
-- [ ] Stitching: offset timestamps, remove duplicate words in overlaps
-- [ ] Auto-detect language from the first 30 seconds with manual override
+- [x] Detect and skip silence before transcription
+- [x] Chunking: split audio into ~30 s chunks with ~1 s overlap
+- [x] Sequential chunk transcription with per-chunk progress
+- [x] Stitching: offset timestamps, remove duplicate words in overlaps
+- [x] Auto-detect language with manual override
 - [ ] Test on a 3-5 minute video; check memory use
-- [ ] Cancel button that stops the worker cleanly
+- [x] Cancel button that stops the worker cleanly
 
 ## Phase 6: Transcript generator tool
-- [ ] Upload video or audio, run the transcription engine
-- [ ] Accept audio-only input when the video's picture cannot be played
-- [ ] Build an editable transcript that preserves word-level timing
-- [ ] Flag potentially profane and often-misheard words for review
-- [ ] Toggle timestamps on/off
-- [ ] Export `.txt`
-- [ ] Export `.srt` (group words into sensible subtitle segments)
-- [ ] Export `.vtt`
-- [ ] Copy-to-clipboard button
-- [ ] Save recent transcripts in IndexedDB for 14 days and resume after refresh
+- [x] Upload video or audio, run the transcription engine
+- [x] Accept audio-only input when the video's picture cannot be played
+- [x] Build an editable transcript that preserves word-level timing
+- [x] Flag potentially profane and often-misheard English words for review
+- [x] Toggle timestamps on/off
+- [x] Export `.txt`
+- [x] Export `.srt` (group words into sensible subtitle segments)
+- [x] Export `.vtt`
+- [x] Copy-to-clipboard button
+- [x] Save recent transcripts in IndexedDB for 14 days and resume after refresh
 
 ## Phase 7: Caption engine (pure JS, no UI)
 - [ ] `groupWordsIntoLines(words, {min: 4, max: 5})` breaking on pauses and punctuation

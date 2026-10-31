@@ -128,7 +128,7 @@
 .secondary-button,
 .preset-button,
 .text-button {
-  min-height: 38px;
+  min-height: 44px;
   border: 1px solid #51495f;
   border-radius: 8px;
   padding: 7px 11px;

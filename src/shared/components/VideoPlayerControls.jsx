@@ -1,7 +1,7 @@
 /**
  * Renders shared playback and seeking controls for a video preview.
  *
- * @param {{currentTime: number, duration: number, isPlaying: boolean, disabled?: boolean, rightLabel?: string, onPlayPause: () => void, onSeek: (time: number) => void}} props Player state and handlers.
+ * @param {{currentTime: number, duration: number, isPlaying: boolean, disabled?: boolean, rightLabel?: string, mediaLabel?: string, onPlayPause: () => void, onSeek: (time: number) => void}} props Player state and handlers.
  * @returns {import('react').JSX.Element} Video playback controls.
  */
 function VideoPlayerControls({
@@ -10,6 +10,7 @@ function VideoPlayerControls({
   isPlaying,
   disabled = false,
   rightLabel,
+  mediaLabel = 'video',
   onPlayPause,
   onSeek,
 }) {
@@ -37,14 +38,14 @@ function VideoPlayerControls({
         {rightLabel && <span className="player-extra-label">{rightLabel}</span>}
       </div>
       <label className="seek-control">
-        <span className="visually-hidden">Seek video</span>
+        <span className="visually-hidden">Seek {mediaLabel}</span>
         <input
           type="range"
           min="0"
           max={safeDuration}
           step="0.05"
           value={safeCurrentTime}
-          aria-label="Seek video"
+          aria-label={`Seek ${mediaLabel}`}
           disabled={disabled}
           onChange={(event) => onSeek(Number(event.target.value))}
         />

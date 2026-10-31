@@ -97,7 +97,7 @@ function handleWorkerMessageError() {
   )
 }
 
-async function runJob(type, file, options = {}) {
+async function runJob(type, file, options = {}, providedFileData) {
   if (typeof File === 'undefined' || !(file instanceof File)) {
     throw new TypeError('Choose a valid local file before processing.')
   }
@@ -113,7 +113,7 @@ async function runJob(type, file, options = {}) {
 
   let fileData
   try {
-    fileData = await file.arrayBuffer()
+    fileData = providedFileData ?? (await file.arrayBuffer())
   } catch {
     throw new Error('Could not read the selected file. Try choosing it again.')
   }
@@ -286,4 +286,19 @@ export function inspectMediaInfo(file, options = {}) {
  */
 export function extractAudio(file, options = {}) {
   return runJob('extractAudio', file, { ...options })
+}
+
+/**
+ * Extracts audio from an existing file buffer without reading the file again.
+ *
+ * @param {File} file Original local media file, used for its name and extension.
+ * @param {ArrayBuffer} fileData Existing encoded media data.
+ * @param {{signal?: AbortSignal, onProgress?: (percent: number) => void}} options Cancellation and progress options.
+ * @returns {Promise<{blob: Blob, filename: string}>} WAV audio and suggested filename.
+ */
+export function extractAudioFromBuffer(file, fileData, options = {}) {
+  if (!(fileData instanceof ArrayBuffer)) {
+    return Promise.reject(new TypeError('Media data must be an ArrayBuffer.'))
+  }
+  return runJob('extractAudio', file, options, fileData)
 }

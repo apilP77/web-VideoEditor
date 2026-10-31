@@ -58,15 +58,13 @@ TODO.md before starting any task.
    changes.
 
 ## Git rules
-After finishing each TODO item:
-1. Run npm run build, npm run lint and npm test. Fix failures first.
-2. Tick the finished items in TODO.md.
-3. git add . then check git status shows no node_modules or dist.
-4. Commit with one short imperative line under 70 characters, for example
-   "Add crop and trim tool". No body, no emoji.
-5. Do NOT run git push. I will push myself.
-6. Run git log -1 --format="%an <%ae> | %s" and show me the result.
-
-Never add Co-authored-by, Signed-off-by, "Generated with", or any mention of
-Copilot, AI or assistants in commit messages, code, comments or docs.
-Never change git config. Never force push. Never rewrite history.
+- After each task: run build, lint and test, then `git add .`, commit with one
+  short line (under 70 characters), and `git push`.
+- Never add `Co-authored-by`, `Signed-off-by`, `Generated with`, or any mention
+  of Copilot or AI anywhere (messages, code, comments, docs).
+- If a commit message gets a co-author line anyway, remove it with
+  `git commit --amend` before pushing.
+- If a push is rejected because history was rewritten, use
+  `git push --force-with-lease`. Never plain `--force`.
+- Never change git config.
+- Do not ask me to run `git status`. End with one line: the commit message.

@@ -24,7 +24,7 @@
 
 .tool-layout-back {
   display: inline-flex;
-  min-height: 38px;
+  min-height: 44px;
   align-items: center;
   gap: 7px;
   color: #aaa3b2;
@@ -97,7 +97,7 @@
 }
 
 .tool-layout-action .shared-button {
-  min-height: 38px;
+  min-height: 44px;
   padding: 7px 11px;
   color: #aaa3b2;
   font-size: 0.79rem;

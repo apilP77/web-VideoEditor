@@ -19,10 +19,13 @@ function formatDuration(seconds) {
 /**
  * Displays a completed export beside its preview and download action.
  *
- * @param {{result: {url: string, filename: string, blob: Blob, aspectRatio: number}, duration: string, resolution: string, processedWith: string, cardRef: import('react').RefObject<HTMLElement | null>, onDownload: () => void, saved: boolean, settingsChanged: boolean, highlighted: boolean}} props Result metadata and actions.
+ * @param {{variant?: 'video' | 'content', heading?: string, children?: import('react').ReactNode, result?: {url: string, filename: string, blob: Blob, aspectRatio: number}, duration?: string, resolution?: string, processedWith?: string, cardRef?: import('react').RefObject<HTMLElement | null>, onDownload?: () => void, saved?: boolean, settingsChanged?: boolean, highlighted?: boolean}} props Result metadata, content, and actions.
  * @returns {import('react').JSX.Element} Compact video result card.
  */
 function ResultCard({
+  variant = 'video',
+  heading = 'Your video is ready',
+  children,
   result,
   duration,
   resolution,
@@ -34,6 +37,38 @@ function ResultCard({
   highlighted,
 }) {
   const [mediaInfo, setMediaInfo] = useState(null)
+
+  if (variant === 'content') {
+    return (
+      <article
+        ref={cardRef}
+        className={`result-card result-card-content${highlighted ? ' result-card-highlighted' : ''}`}
+        aria-labelledby="result-heading"
+      >
+        <div className="result-card-details">
+          <header className="result-success-header" role="status" aria-live="polite">
+            <svg
+              aria-hidden="true"
+              className="result-success-icon"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <path
+                d="m5 12.5 4.5 4.5L19 7"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <h2 id="result-heading">{heading}</h2>
+          </header>
+          {children}
+        </div>
+      </article>
+    )
+  }
+
   const currentMediaInfo = mediaInfo?.url === result.url ? mediaInfo : null
   const aspectRatio = currentMediaInfo?.aspectRatio ?? `${result.aspectRatio} / 1`
 
@@ -78,7 +113,7 @@ function ResultCard({
             />
           </svg>
           <h2 id="result-heading">
-            Your video is ready
+            {heading}
           </h2>
         </header>
 

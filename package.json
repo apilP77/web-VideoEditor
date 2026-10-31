@@ -13,6 +13,7 @@
   "dependencies": {
     "@ffmpeg/ffmpeg": "^0.12.15",
     "@ffmpeg/util": "^0.12.2",
+    "@huggingface/transformers": "^4.3.2",
     "lucide-react": "^1.66.0",
     "mediabunny": "^1.65.0",
     "react": "^19.3.1",

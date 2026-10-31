@@ -1,5 +1,6 @@
 import CropTrim from './crop-trim/CropTrim.jsx'
 import Speed from './speed/Speed.jsx'
+import Transcript from './transcript/Transcript.jsx'
 
 // Set ready: true when a tool is finished.
 export const tools = [
@@ -17,9 +18,9 @@ export const tools = [
     name: 'Transcript generator',
     description: 'Turn speech into an editable transcript with useful timestamps.',
     icon: 'FileText',
-    accent: 'blue',
-    ready: false,
-    component: null,
+    accent: 'teal',
+    ready: true,
+    component: Transcript,
   },
   {
     id: 'speed',

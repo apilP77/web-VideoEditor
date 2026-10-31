@@ -29,6 +29,11 @@
   object-fit: contain;
 }
 
+.result-card-content {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
 .result-card-details {
   display: grid;
   min-width: 0;

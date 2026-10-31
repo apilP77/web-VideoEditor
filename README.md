@@ -127,13 +127,24 @@ vercel.json / netlify.toml # COOP/COEP headers
 
 ### Lightweight transcription (chunking)
 1. Accept a video or audio file. Audio-only input keeps transcription available when a video's picture cannot be played by the browser.
-2. Detect and skip silence before transcription; extract usable audio as 16 kHz mono WAV.
-3. Auto-detect language from the first 30 seconds, with a manual language override.
-4. Choose a larger Whisper model on desktop and a lighter model on phones. Model downloads are approximately 170-340 MB, depending on the selected model.
+2. Detect long silent regions and decode audio to 16 kHz mono samples; use FFmpeg WAV extraction when browser decoding fails.
+3. Whisper uses automatic language detection by default, with a manual language override.
+4. Choose Whisper tiny (~60-200 MB), base (~110-360 MB), or small (~300 MB-1 GB). Approximate downloads vary by browser backend.
 5. Split audio into ~30 s chunks with ~1 s overlap so words aren't cut in half.
 6. Transcribe chunks **sequentially** in a Whisper worker (never in parallel).
 7. Offset each chunk's timestamps by its start time, then stitch, dropping duplicate words in the overlap region.
 8. Output: one array of `{ word, start, end }`.
+
+The transcript tool decodes local media to 16 kHz mono with the browser's
+AudioContext and falls back to FFmpeg when the browser cannot decode a format.
+Transformers.js runs Whisper in a Web Worker, prefers WebGPU, and falls back to
+WASM when needed. The first run downloads the selected model; Transformers.js
+uses the browser cache for later runs. A user's cache may be cleared by browser
+settings. Browser memory and WebGPU support vary, so long files and the larger
+model can be slow or exceed device limits.
+Transformers.js may not include detected-language metadata in its output; when
+it does not, the transcript shows that the language was not reported. Choosing
+a language manually records the selected language instead.
 
 ### Caption pace, editing, and styles
 Caption pace can use 1-3 words per line, up to two lines on screen, or the 4-5 words-per-line preset. Break lines at pauses and punctuation while keeping each word's timing attached during transcript edits.
