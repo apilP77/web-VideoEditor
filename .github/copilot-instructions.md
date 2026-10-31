@@ -19,10 +19,9 @@ After finishing each TODO item:
 3. git add . then check git status shows no node_modules or dist.
 4. Commit with one short imperative line under 70 characters, for example
    "Add crop and trim tool". No body, no emoji.
-5. Run git push.
+5. Do NOT run git push. I will push myself.
 6. Run git log -1 --format="%an <%ae> | %s" and show me the result.
 
 Never add Co-authored-by, Signed-off-by, "Generated with", or any mention of
 Copilot, AI or assistants in commit messages, code, comments or docs.
 Never change git config. Never force push. Never rewrite history.
-If a push fails, stop and tell me instead of trying other fixes.
