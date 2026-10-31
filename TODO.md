@@ -1,6 +1,6 @@
 # TODO
 
-Work top to bottom. Finish and test each phase before starting the next. Each task is small enough to give to Copilot as a single prompt.
+Work top to bottom. Finish and test each phase before starting the next. Each task is small enough to handle as one focused change.
 
 Legend: `[ ]` todo, `[x]` done
 
@@ -35,14 +35,14 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Handle errors and cleanup (delete files from FFmpeg virtual FS after use)
 
 ## Phase 3: Crop and trim tool
-- [ ] Video preview with `<video>` and playback controls
-- [ ] Trim UI: start/end range slider with current time markers
-- [ ] Crop UI: draggable/resizable overlay on the video
-- [ ] Aspect ratio presets: Free, 9:16, 4:5, 1:1, 16:9
-- [ ] Convert overlay position to real video pixel coordinates (account for scaled preview)
-- [ ] Combine trim + crop into a single FFmpeg command
-- [ ] Progress bar, result preview, download
-- [ ] Test with landscape to 9:16 conversion
+- [x] Video preview with `<video>` and playback controls
+- [x] Trim UI: start/end range slider with current time markers
+- [x] Crop UI: draggable/resizable overlay on the video
+- [x] Aspect ratio presets: Free, 9:16, 4:5, 1:1, 16:9
+- [x] Convert overlay position to real video pixel coordinates (account for scaled preview)
+- [x] Combine trim + crop into a single FFmpeg command
+- [x] Progress bar, result preview, download
+- [x] Test with landscape to 9:16 conversion
 
 ## Phase 4: Speed changer tool
 - [ ] Upload and preview
@@ -52,88 +52,103 @@ Legend: `[ ]` todo, `[x]` done
 - [ ] Test audio stays in sync and pitch is preserved
 
 ## Phase 5: Transcription engine (the hard part)
-- [ ] Spike: run Whisper (tiny or base) via Transformers.js on a 10 s WAV in the browser
+- [ ] Spike: run Whisper via Transformers.js on a 10 s WAV in the browser
 - [ ] Enable word-level timestamps and log `{word, start, end}` output
 - [ ] Move Whisper into a Web Worker
 - [ ] Model download progress UI and caching
+- [ ] Select a larger Whisper model on desktop and a lighter model on phones
+- [ ] Detect and skip silence before transcription
 - [ ] Chunking: split audio into ~30 s chunks with ~1 s overlap
 - [ ] Sequential chunk transcription with per-chunk progress
 - [ ] Stitching: offset timestamps, remove duplicate words in overlaps
-- [ ] Language selection (auto-detect + manual)
+- [ ] Auto-detect language from the first 30 seconds with manual override
 - [ ] Test on a 3-5 minute video; check memory use
 - [ ] Cancel button that stops the worker cleanly
 
 ## Phase 6: Transcript generator tool
 - [ ] Upload video or audio, run the transcription engine
-- [ ] Show editable transcript text
+- [ ] Accept audio-only input when the video's picture cannot be played
+- [ ] Build an editable transcript that preserves word-level timing
+- [ ] Flag potentially profane and often-misheard words for review
 - [ ] Toggle timestamps on/off
 - [ ] Export `.txt`
 - [ ] Export `.srt` (group words into sensible subtitle segments)
+- [ ] Export `.vtt`
 - [ ] Copy-to-clipboard button
+- [ ] Save recent transcripts in IndexedDB for 14 days and resume after refresh
 
 ## Phase 7: Caption engine (pure JS, no UI)
 - [ ] `groupWordsIntoLines(words, {min: 4, max: 5})` breaking on pauses and punctuation
+- [ ] Support caption pace of 1-3 words per line and up to two lines on screen
 - [ ] `getActiveWord(lines, time)` returns the current line and word index
 - [ ] Template data format (font, size, colors, stroke, highlight, position)
-- [ ] 4-5 built-in templates
+- [ ] Five built-in styles: Classic, Minimal, Bold, Highlight, and Pill
+- [ ] Four caption animations: Bounce, Pop, Fade, and Reveal
+- [ ] Highlight color picker and automatic black/white text contrast for Pill
+- [ ] Flag potentially profane and often-misheard words for review
 - [ ] Unit tests for grouping and active-word lookup
 
 ## Phase 8: Captions generator tool
 - [ ] Upload video, run transcription with progress
 - [ ] Live preview: `<video>` + caption overlay with highlighted active word
-- [ ] Template picker with instant preview
-- [ ] Edit transcript text (fix mistakes) and re-group lines
-- [ ] Customize: font size, position, highlight color
-- [ ] Prototype export A: Canvas + MediaRecorder (WebM, real time)
-- [ ] Prototype export B: generate ASS subtitles and burn in with FFmpeg
-- [ ] Compare A vs B (speed, quality, highlight accuracy); keep the better one
-- [ ] Export `.srt` alongside the video
-- [ ] Download final video
+- [ ] Style picker for Classic, Minimal, Bold, Highlight, and Pill
+- [ ] Edit transcript text while preserving word timing and re-group lines
+- [ ] Review flagged words before export
+- [ ] Customize pace (1-3 words per line, up to two lines, or 4-5 word preset)
+- [ ] Customize font size, position, highlight color, and animation (Bounce, Pop, Fade, Reveal)
+- [ ] Export MP4 with captions burned in using FFmpeg
+- [ ] Export `.srt`, `.vtt`, and `.txt` alongside the video
 
-## Phase 9: Batch captions tool
-- [ ] Multi-file upload
-- [ ] Queue data model and status per item
-- [ ] Process one video at a time (transcribe, render, save)
-- [ ] Store queue and results in IndexedDB
-- [ ] Per-item progress, retry on error, remove from queue
-- [ ] Choose one template for the whole batch
-- [ ] "Download all" (individual files or a zip)
+## Phase 9: Shared batch system
+- [ ] Build one reusable batch runner that every tool can plug into
+- [ ] Queue jobs and process one at a time
+- [ ] Show per-item status and progress; allow retry and removal
+- [ ] Continue processing after an item fails
+- [ ] Apply tool settings to all queued items
+- [ ] Save and reuse batch presets
+- [ ] Add a review/edit step before saving each result
+- [ ] Persist queue and results in IndexedDB
+- [ ] Download results as a ZIP
 - [ ] Free memory between items
 
-## Phase 10: Polish
+## Phase 10: Batch captions tool
+- [ ] Use the shared batch runner for multi-file caption jobs
+- [ ] Choose one caption style and settings for the whole batch
+- [ ] Process each video one at a time (transcribe, render, review)
+- [ ] Retry failed items without stopping the remaining queue
+
+## Phase 11: Polish
 - [ ] Loading, empty and error states everywhere
 - [ ] File size / duration warnings
 - [ ] Keyboard accessibility and focus states
 - [ ] Responsive layout check (desktop, tablet, mobile)
 - [ ] Browser testing: Chrome, Edge, Firefox, Safari
-- [ ] Page titles and meta tags per tool
+- [ ] Page per tool with its own title, description, and FAQ
 - [ ] Favicon and simple logo
+- [ ] Add a service worker for offline use after the first load
 
-## Phase 11: Deploy
+## Phase 12: Deploy
 - [ ] Add `vercel.json` (or `netlify.toml`) with COOP/COEP headers
 - [ ] Deploy to Vercel
 - [ ] Verify FFmpeg and Whisper work on the live URL
 - [ ] Write final README with screenshots / GIF demo
 - [ ] Add the project to your portfolio
 
-## Phase 12: Optional quick-win tools (each is one registry line)
+## Phase 13: Optional quick-win tools (each is one registry line)
 - [ ] Video to MP3
 - [ ] Remove audio from video
 - [ ] Flip and rotate
 - [ ] Convert MOV to MP4
 - [ ] Compress video
-- [ ] Batch compress / batch crop
+- [ ] Batch compress
+- [ ] Batch trim
+- [ ] Batch crop
+- [ ] Batch speed change
+- [ ] Batch audio extraction
 
 ---
 
 ## Open decisions
-- [ ] Final caption export method (Canvas vs FFmpeg burn-in)
 - [ ] Whisper model size (tiny vs base) for the speed/accuracy balance
 - [ ] Multi-threaded FFmpeg (needs headers) vs single-threaded
 - [ ] Project name and logo
-
-## Copilot prompt starters
-- "Create a React component `ToolCard` using Tailwind with icon, title, description and a chevron, dark theme."
-- "Write a Web Worker that loads @ffmpeg/ffmpeg once and exposes a `trim(file, start, end)` function with progress messages."
-- "Write `groupWordsIntoLines(words)` that groups `{word,start,end}` into lines of 4-5 words, preferring breaks where the gap between words exceeds 0.4s or after punctuation."
-- "Write a function that stitches Whisper chunk results with 1s overlap, offsetting timestamps and removing duplicated words."
