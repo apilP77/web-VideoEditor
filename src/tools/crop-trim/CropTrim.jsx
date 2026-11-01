@@ -354,9 +354,8 @@ function CropTrim({ tool }) {
   }
 
   function getExportCrop() {
-    const video = videoRef.current
     const preview = previewRef.current
-    if (!video || !preview || !crop) {
+    if (!preview || !crop) {
       throw new Error('Wait for the video preview to finish loading.')
     }
 
@@ -370,7 +369,9 @@ function CropTrim({ tool }) {
     return displayedCropToVideoPixels(
       displayCrop,
       { width: bounds.width, height: bounds.height },
-      { width: video.videoWidth, height: video.videoHeight },
+      // Always the original's pixels: the element may be playing the smaller
+      // preview copy, or report 0 when it cannot decode the picture.
+      { width: videoSize.width, height: videoSize.height },
     )
   }
 
@@ -398,8 +399,8 @@ function CropTrim({ tool }) {
         },
       }
       let output
+      const exportCrop = cropChanged ? getExportCrop() : null
       if (trimChanged && cropChanged) {
-        const exportCrop = getExportCrop()
         output = await trimAndCrop(
           file,
           startTime,
@@ -414,20 +415,19 @@ function CropTrim({ tool }) {
           exact: exactTrim,
         })
       } else {
-        const exportCrop = getExportCrop()
         output = await cropVideo(file, exportCrop, videoSize, options)
       }
       const outputDuration = trimChanged ? endTime - startTime : duration
-      const outputResolution = cropChanged
-        ? `${crop.w} × ${crop.h}`
+      const outputResolution = exportCrop
+        ? `${exportCrop.w} × ${exportCrop.h}`
         : `${videoSize.width} × ${videoSize.height}`
       setResult({
         ...output,
         url: URL.createObjectURL(output.blob),
         durationLabel: formatTime(outputDuration),
         resolution: outputResolution,
-        aspectRatio: cropChanged
-          ? crop.w / crop.h
+        aspectRatio: exportCrop
+          ? exportCrop.w / exportCrop.h
           : videoSize.width / videoSize.height,
         settings: {
           startTime,
