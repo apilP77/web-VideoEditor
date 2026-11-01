@@ -33,6 +33,7 @@ import {
   saveLatestTranscript,
 } from '../../shared/storage/transcriptStorage.js'
 import { getMonotonicTime } from '../../shared/utils/timing.js'
+import { measureDownloadSpeed } from '../../shared/whisper/downloadSpeed.js'
 import {
   prepareWhisperModel,
   transcribe,
@@ -358,25 +359,11 @@ function Transcript({ tool }) {
   function updateProgress(nextProgress) {
     const now = getMonotonicTime()
     let downloadSpeedBytesPerSecond = null
-    if (
-      nextProgress.stage === 'loading-model' &&
-      Number.isFinite(nextProgress.loadedBytes)
-    ) {
-      const previous = lastDownloadRef.current
-      if (
-        previous?.file === nextProgress.file &&
-        now > previous.time &&
-        nextProgress.loadedBytes >= previous.bytes
-      ) {
-        downloadSpeedBytesPerSecond =
-          ((nextProgress.loadedBytes - previous.bytes) / (now - previous.time)) * 1000
-      }
-      lastDownloadRef.current = {
-        file: nextProgress.file,
-        bytes: nextProgress.loadedBytes,
-        time: now,
-      }
-    } else if (nextProgress.stage !== 'loading-model') {
+    if (nextProgress.stage === 'loading-model') {
+      const measured = measureDownloadSpeed(lastDownloadRef.current, nextProgress, now)
+      downloadSpeedBytesPerSecond = measured.bytesPerSecond
+      lastDownloadRef.current = measured.sample
+    } else {
       lastDownloadRef.current = null
     }
 
