@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
   ChevronLeft,
@@ -18,6 +18,7 @@ import '@fontsource/bebas-neue/400.css'
 import '@fontsource/anton/400.css'
 import '@fontsource/caveat/700.css'
 import Button from '../../shared/components/Button.jsx'
+import PreviewPoster, { PreviewCopyBadge } from '../../shared/components/PreviewPoster.jsx'
 import ProcessingRing from '../../shared/components/ProcessingRing.jsx'
 import ResultCard from '../../shared/components/ResultCard.jsx'
 import ToolLayout from '../../shared/components/ToolLayout.jsx'
@@ -25,12 +26,12 @@ import UploadBox from '../../shared/components/UploadBox.jsx'
 import VideoPreview from '../../shared/components/VideoPreview.jsx'
 import VideoPlayerControls from '../../shared/components/VideoPlayerControls.jsx'
 import { decodeAudio } from '../../shared/media/decodeAudio.js'
-import { createPreviewProxy } from '../../shared/media/createPreviewProxy.js'
 import { getMediaDuration } from '../../shared/media/duration.js'
 import { getVideoFrameRate } from '../../shared/media/frameRate.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import { getPreviewSize } from '../../shared/media/previewProxy.js'
 import { useObjectUrl } from '../../shared/media/useObjectUrl.js'
+import { usePreviewFallback } from '../../shared/media/usePreviewFallback.js'
 import {
   CAPTION_PACES,
   deleteCaption,
@@ -152,8 +153,7 @@ const PREVIEW_CAPTION = {
 }
 const STYLE_STORAGE_KEY = 'web-video-toolkit-caption-style'
 const NUDGE_SECONDS = 0.05
-const PREVIEW_FALLBACK_MESSAGE =
-  "Your browser can't show this video's picture (likely HEVC). Captions can still be created from the audio. To preview and export, try Chrome with hardware HEVC support, or convert the video to H.264 MP4 first."
+
 
 function isVideoFile(file) {
   return file.type.startsWith('video/') ||
@@ -326,40 +326,23 @@ function Captions({ tool }) {
   const previewFrameRef = useRef(null)
   const editorListRef = useRef(null)
   const abortControllerRef = useRef(null)
-  const previewProxyAbortControllerRef = useRef(null)
   const audioCacheRef = useRef(null)
   const exportAbortControllerRef = useRef(null)
   const progressRef = useRef(null)
   const activeCaptionRef = useRef(-1)
-  const previewProxyRequestedRef = useRef(null)
-  const previewFrameTimerRef = useRef(null)
-  const previewFrameCallbackRef = useRef(null)
-  const previewFrameAvailableRef = useRef(false)
   const [file, setFile] = useState(null)
   const [flowStep, setFlowStep] = useState(1)
   const audioReadyRef = useRef(null)
-  const sourceUrl = useObjectUrl(file)
-  const [previewProxyFile, setPreviewProxyFile] = useState(null)
-  const previewProxyUrl = useObjectUrl(previewProxyFile)
-  const previewUrl = previewProxyUrl || sourceUrl
+  const preview = usePreviewFallback({
+    file,
+    videoRef,
+    // Audio extraction for captions goes first in the shared FFmpeg queue.
+    waitBeforeFFmpeg: () => audioReadyRef.current ?? Promise.resolve(),
+  })
+  const previewUrl = preview.previewUrl
   const [mediaInfo, setMediaInfo] = useState(null)
   const [previewDimensions, setPreviewDimensions] = useState({ width: 0, height: 0 })
   const [previewMaxWidth, setPreviewMaxWidth] = useState(640)
-  const [previewProxyStatus, setPreviewProxyStatus] = useState('idle')
-  const [previewProxyProgress, setPreviewProxyProgress] = useState(null)
-  const [previewStartedAt, setPreviewStartedAt] = useState(0)
-  const [previewElapsed, setPreviewElapsed] = useState(0)
-  const [previewProxyError, setPreviewProxyError] = useState('')
-  const [previewTechnicalDetails, setPreviewTechnicalDetails] = useState('')
-  const [previewDiagnostics, setPreviewDiagnostics] = useState({
-    errorCode: null,
-    errorMessage: '',
-    canPlayType: '',
-    frameAvailable: null,
-    readyState: 0,
-    videoWidth: 0,
-    networkState: 0,
-  })
   const [frameRate, setFrameRate] = useState(null)
   const [previewFrameVersion, setPreviewFrameVersion] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
@@ -406,11 +389,11 @@ function Captions({ tool }) {
   const exportResultUrl = useObjectUrl(exportResultFile)
   const isProcessing = status === 'processing' || exportStatus === 'processing'
   const hasCaptions = captions.length > 0
-  const exportNeedsPreviewProxy = previewDiagnostics.frameAvailable === false
-  const exportWaitingForFrame = previewDiagnostics.frameAvailable !== true &&
-    previewDiagnostics.frameAvailable !== false
-  const exportUsesPreviewProxy =
-    exportNeedsPreviewProxy && Boolean(previewProxyFile)
+  // Export burns captions into the original unless the browser cannot decode
+  // its picture; then it uses the 960px preview copy.
+  const exportNeedsPreviewProxy = preview.frameAvailable === false
+  const exportWaitingForFrame = preview.frameAvailable === null
+  const exportUsesPreviewProxy = exportNeedsPreviewProxy && Boolean(preview.previewFile)
   const previewSize = getPreviewSize(
     previewDimensions.width,
     previewDimensions.height,
@@ -435,110 +418,6 @@ function Captions({ tool }) {
     () => findCaptionReviewWords(captions, spokenLanguage),
     [captions, spokenLanguage],
   )
-  function clearPreviewFrameWait(video) {
-    window.clearTimeout(previewFrameTimerRef.current)
-    previewFrameTimerRef.current = null
-    if (
-      video &&
-      previewFrameCallbackRef.current !== null &&
-      typeof video.cancelVideoFrameCallback === 'function'
-    ) {
-      video.cancelVideoFrameCallback(previewFrameCallbackRef.current)
-    }
-    previewFrameCallbackRef.current = null
-  }
-
-  const requestPreviewCopy = useCallback(async (
-    sourceFile,
-    width,
-    height,
-    preferFFmpeg = false,
-  ) => {
-    if (!sourceFile || previewProxyRequestedRef.current === sourceFile || previewProxyFile) {
-      return
-    }
-
-    previewProxyRequestedRef.current = sourceFile
-    const controller = new AbortController()
-    previewProxyAbortControllerRef.current = controller
-    const now = getMonotonicTime()
-    setPreviewProxyStatus('processing')
-    setPreviewProxyProgress(null)
-    setPreviewStartedAt(now)
-    setPreviewElapsed(0)
-    setProgressUpdatedAt(now)
-    setPreviewProxyError('')
-    setPreviewTechnicalDetails('')
-
-    try {
-      let sourceWidth = width
-      let sourceHeight = height
-      if (!(sourceWidth > 0 && sourceHeight > 0)) {
-        const info = await getMediaInfo(sourceFile)
-        sourceWidth = info.width
-        sourceHeight = info.height
-      }
-      if (!(sourceWidth > 0 && sourceHeight > 0)) {
-        throw new Error('Video dimensions could not be read.')
-      }
-
-      const output = await createPreviewProxy(sourceFile, {
-        width: sourceWidth,
-        height: sourceHeight,
-        signal: controller.signal,
-        preferFFmpeg,
-        waitBeforeFFmpeg: () => audioReadyRef.current ?? Promise.resolve(),
-        onProgress: (percent) => {
-          if (
-            controller.signal.aborted ||
-            previewProxyAbortControllerRef.current !== controller
-          ) {
-            return
-          }
-          setPreviewProxyProgress(Number.isFinite(percent) ? percent : null)
-          setProgressUpdatedAt(getMonotonicTime())
-        },
-      })
-      if (controller.signal.aborted) return
-
-      clearPreviewFrameWait(videoRef.current)
-      setPreviewProxyFile(
-        new File([output.blob], output.filename, {
-          type: 'video/mp4',
-          lastModified: Date.now(),
-        }),
-      )
-      setPreviewDiagnostics((current) => ({
-        ...current,
-        frameAvailable: null,
-      }))
-      setPreviewProxyStatus('done')
-      setPreviewProxyProgress(100)
-    } catch (proxyError) {
-      const isCurrentRequest = previewProxyAbortControllerRef.current === controller
-      if (proxyError?.name === 'AbortError' || controller.signal.aborted) {
-        if (isCurrentRequest) {
-          previewProxyRequestedRef.current = null
-          setPreviewProxyStatus('idle')
-        }
-        return
-      }
-      if (!isCurrentRequest) return
-      console.error('Could not create a compatible video preview.', proxyError)
-      previewProxyRequestedRef.current = null
-      setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
-      setPreviewTechnicalDetails(
-        proxyError?.technicalDetails ??
-          (proxyError instanceof Error ? proxyError.message : String(proxyError)),
-      )
-      setPreviewProxyStatus('error')
-    } finally {
-      if (previewProxyAbortControllerRef.current === controller) {
-        previewProxyAbortControllerRef.current = null
-      }
-    }
-  }, [previewProxyFile])
-
   useEffect(() => {
     let active = true
     waitForCaptionFonts()
@@ -580,20 +459,7 @@ function Captions({ tool }) {
     abortControllerRef.current?.abort()
     audioCacheRef.current = null
   }, [])
-  useEffect(() => () => previewProxyAbortControllerRef.current?.abort(), [])
   useEffect(() => () => exportAbortControllerRef.current?.abort(), [])
-
-  useEffect(() => () => {
-    window.clearTimeout(previewFrameTimerRef.current)
-    const video = videoRef.current
-    if (
-      video &&
-      previewFrameCallbackRef.current !== null &&
-      typeof video.cancelVideoFrameCallback === 'function'
-    ) {
-      video.cancelVideoFrameCallback(previewFrameCallbackRef.current)
-    }
-  }, [])
 
   useEffect(() => {
     if (exportStatus !== 'processing') return undefined
@@ -602,75 +468,6 @@ function Captions({ tool }) {
     }, 1000)
     return () => window.clearInterval(timer)
   }, [exportStartedAt, exportStatus])
-
-  useEffect(() => {
-    if (previewProxyStatus !== 'processing') return undefined
-    const updateElapsed = () => {
-      setPreviewElapsed(getMonotonicTime() - previewStartedAt)
-    }
-    updateElapsed()
-    const timer = window.setInterval(updateElapsed, 1000)
-    return () => window.clearInterval(timer)
-  }, [previewProxyStatus, previewStartedAt])
-
-  useEffect(() => {
-    if (!file || !previewUrl) return undefined
-
-    const video = videoRef.current
-    previewFrameAvailableRef.current = false
-    window.clearTimeout(previewFrameTimerRef.current)
-
-    previewFrameTimerRef.current = window.setTimeout(() => {
-      if (previewFrameAvailableRef.current) return
-
-      const activeVideo = videoRef.current
-      if (!activeVideo) return
-      const activeFile = previewProxyFile ?? file
-      const details = {
-        readyState: activeVideo.readyState,
-        videoWidth: activeVideo.videoWidth,
-        errorCode: activeVideo.error?.code ?? null,
-        errorMessage: activeVideo.error?.message || '',
-        networkState: activeVideo.networkState,
-        canPlayType: activeFile
-          ? activeVideo.canPlayType(activeFile.type) || 'no'
-          : 'unknown',
-        fileType: activeFile?.type || 'unknown',
-      }
-
-      setPreviewDiagnostics((current) => ({
-        ...current,
-        ...details,
-        frameAvailable: false,
-      }))
-      console.warn('Captions preview did not produce a decoded frame within three seconds.', details)
-
-      if (previewProxyFile) {
-        setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
-        setPreviewTechnicalDetails(JSON.stringify(details, null, 2))
-      } else {
-        void requestPreviewCopy(
-          file,
-          activeVideo.videoWidth,
-          activeVideo.videoHeight,
-          true,
-        )
-      }
-    }, 3000)
-
-    return () => {
-      window.clearTimeout(previewFrameTimerRef.current)
-      previewFrameTimerRef.current = null
-      if (
-        video &&
-        previewFrameCallbackRef.current !== null &&
-        typeof video.cancelVideoFrameCallback === 'function'
-      ) {
-        video.cancelVideoFrameCallback(previewFrameCallbackRef.current)
-      }
-      previewFrameCallbackRef.current = null
-    }
-  }, [file, previewProxyFile, previewUrl, requestPreviewCopy])
 
   useEffect(() => {
     const frame = previewFrameRef.current
@@ -814,206 +611,29 @@ function Captions({ tool }) {
     })
   }, [activeCaptionIndex])
 
-  /**
-   * Reads a tiny copy of the current frame.
-   *
-   * Returns 'unknown' while the frame cannot be read yet: during a seek the
-   * browser reports readyState < 2 and drawImage yields fully transparent
-   * pixels, which must not be mistaken for a black (undecodable) picture.
-   */
-  function inspectVideoFrame(video) {
-    if (video.readyState < 2 || video.seeking) return 'unknown'
-    const canvas = document.createElement('canvas')
-    canvas.width = 32
-    canvas.height = 32
-    const context = canvas.getContext('2d', { willReadFrequently: true })
-    if (!context) return 'unknown'
-    try {
-      context.drawImage(video, 0, 0, canvas.width, canvas.height)
-      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
-      let opaque = false
-      for (let index = 0; index < pixels.length; index += 4) {
-        if (pixels[index + 3] === 0) continue
-        opaque = true
-        if (pixels[index] > 4 || pixels[index + 1] > 4 || pixels[index + 2] > 4) {
-          return 'visible'
-        }
-      }
-      return opaque ? 'black' : 'unknown'
-    } catch (error) {
-      console.warn('Could not inspect the decoded preview frame.', error)
-      return 'unknown'
-    }
-  }
-
-  function markPreviewFrameAvailable(video) {
-    const frameState = inspectVideoFrame(video)
-    // Not readable yet; the seeked event or next frame callback checks again.
-    if (frameState === 'unknown') return false
-    if (frameState === 'black') {
-      previewFrameAvailableRef.current = false
-      const activeFile = previewProxyFile ?? file
-      const canPlayType = activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown'
-      console.warn('Captions preview produced a fully black frame.', {
-        errorCode: video.error?.code ?? null,
-        canPlayType,
-        fileType: activeFile?.type || 'unknown',
-      })
-      const details = {
-        errorCode: video.error?.code ?? null,
-        canPlayType,
-        fileType: activeFile?.type || 'unknown',
-        frame: 'fully black',
-      }
-      setPreviewDiagnostics((current) => ({
-        ...current,
-        errorCode: video.error?.code ?? current.errorCode,
-        errorMessage: video.error?.message || 'The decoded preview frame was fully black.',
-        canPlayType,
-        readyState: video.readyState,
-        videoWidth: video.videoWidth,
-        networkState: video.networkState,
-        frameAvailable: previewProxyFile ? false : null,
-      }))
-      if (previewProxyFile) {
-        setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
-        setPreviewTechnicalDetails(JSON.stringify(details, null, 2))
-      }
-      return false
-    }
-    previewFrameAvailableRef.current = true
-    clearPreviewFrameWait(video)
-    setPreviewDiagnostics((current) => ({
-      ...current,
-      readyState: video.readyState,
-      videoWidth: video.videoWidth,
-      networkState: video.networkState,
-      frameAvailable: true,
-    }))
-    return true
-  }
-
-  function updatePreviewDiagnosticsFromVideo(video) {
-    if (video.currentSrc !== previewUrl) return
-    const activeFile = previewProxyFile ?? file
-    setPreviewDiagnostics((current) => ({
-      ...current,
-      canPlayType: activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown',
-      errorCode: video.error?.code ?? null,
-      errorMessage: video.error?.message || '',
-      readyState: video.readyState,
-      videoWidth: video.videoWidth,
-      networkState: video.networkState,
-    }))
-  }
-
   function handleVideoMetadata(event) {
+    preview.videoHandlers.onLoadedMetadata(event)
     const video = event.currentTarget
     if (video.currentSrc !== previewUrl) return
     const width = video.videoWidth
     const height = video.videoHeight
-    const activeFile = previewProxyFile ?? file
-    const canPlayType = activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown'
-    setPreviewDiagnostics((current) => ({
-      ...current,
-      canPlayType,
-      errorCode: video.error?.code ?? current.errorCode,
-      errorMessage: video.error?.message ?? current.errorMessage,
-      readyState: video.readyState,
-      videoWidth: width,
-      networkState: video.networkState,
-      frameAvailable: previewFrameAvailableRef.current ? true : null,
-    }))
-
     if (width > 0 && height > 0) {
       setPreviewDimensions({ width, height })
-      if (!previewProxyFile) {
-        setMediaInfo((current) => ({
-          ...current,
-          width: current?.width || width,
-          height: current?.height || height,
-          duration: getMediaDuration(video.duration, current?.duration),
-          hasVideo: true,
-        }))
-      } else {
-        setMediaInfo((current) => ({
-          ...current,
-          duration: getMediaDuration(video.duration, current?.duration),
-        }))
-      }
-    }
-
-    const validDuration = getMediaDuration(video.duration, mediaInfo?.duration)
-    if (video.currentTime === 0 && validDuration > 0) {
-      video.currentTime = Math.min(0.01, validDuration / 2)
-    }
-    setPreviewFrameVersion((version) => version + 1)
-
-    if (width > 0 && height > 0 && typeof video.requestVideoFrameCallback === 'function') {
-      if (
-        previewFrameCallbackRef.current !== null &&
-        typeof video.cancelVideoFrameCallback === 'function'
-      ) {
-        video.cancelVideoFrameCallback(previewFrameCallbackRef.current)
-      }
-      previewFrameCallbackRef.current = video.requestVideoFrameCallback(() => {
-        previewFrameCallbackRef.current = null
-        if (video.currentSrc === previewUrl) markPreviewFrameAvailable(video)
-      })
-    }
-  }
-
-  function handleVideoError(event) {
-    const video = event.currentTarget
-    if (video.currentSrc !== previewUrl) return
-    const mediaError = video.error
-    const code = mediaError?.code ?? null
-    const message = mediaError?.message || 'The browser could not decode a video frame.'
-    const activeFile = previewProxyFile ?? file
-    const canPlayType = activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown'
-    const details = {
-      code,
-      message,
-      canPlayType,
-      fileType: activeFile?.type || 'unknown',
-    }
-    console.error('Captions preview video error.', details)
-    setPreviewDiagnostics((current) => ({
-      ...current,
-      errorCode: code,
-      errorMessage: message,
-      canPlayType,
-      readyState: video.readyState,
-      videoWidth: video.videoWidth,
-      networkState: video.networkState,
-      frameAvailable: previewProxyFile ? false : current.frameAvailable,
-    }))
-    if (previewProxyFile) {
-      setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
-      setPreviewTechnicalDetails(JSON.stringify(details, null, 2))
-    }
-  }
-
-  function handlePreviewLoadedData() {
-    const video = videoRef.current
-    if (video?.currentSrc !== previewUrl) return
-    if (video) {
-      const activeFile = previewProxyFile ?? file
-      setPreviewDiagnostics((current) => ({
+      // The preview copy is smaller than the original; keep the source size.
+      setMediaInfo((current) => ({
         ...current,
-        canPlayType: activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown',
-        errorCode: video.error?.code ?? null,
-        errorMessage: video.error?.message || '',
-        readyState: video.readyState,
-        videoWidth: video.videoWidth,
-        networkState: video.networkState,
+        ...(preview.usingProxy
+          ? {}
+          : { width: current?.width || width, height: current?.height || height, hasVideo: true }),
+        duration: getMediaDuration(video.duration, current?.duration),
       }))
     }
-    if (video?.videoWidth > 0 && video?.videoHeight > 0) {
-      if (markPreviewFrameAvailable(video)) {
-        setPreviewFrameVersion((version) => version + 1)
-      }
-    }
+    setPreviewFrameVersion((version) => version + 1)
+  }
+
+  function handlePreviewLoadedData(event) {
+    preview.videoHandlers.onLoadedData(event)
+    setPreviewFrameVersion((version) => version + 1)
   }
 
   function chooseFile(selectedFile) {
@@ -1022,30 +642,13 @@ function Captions({ tool }) {
       return
     }
     abortControllerRef.current?.abort()
-    previewProxyAbortControllerRef.current?.abort()
     exportAbortControllerRef.current?.abort()
     const shouldRestore = restoredProject && lastProject?.fileName === selectedFile.name
     setFile(selectedFile)
     setFlowStep(shouldRestore ? 3 : 2)
     audioCacheRef.current = null
-    setPreviewProxyFile(null)
     setMediaInfo(null)
     setPreviewDimensions({ width: 0, height: 0 })
-    setPreviewProxyStatus('idle')
-    setPreviewProxyProgress(null)
-    setPreviewProxyError('')
-    setPreviewTechnicalDetails('')
-    setPreviewDiagnostics({
-      errorCode: null,
-      errorMessage: '',
-      canPlayType: '',
-      frameAvailable: null,
-      readyState: 0,
-      videoWidth: 0,
-      networkState: 0,
-    })
-    previewFrameAvailableRef.current = false
-    previewProxyRequestedRef.current = null
     setFrameRate(null)
     setPreviewFrameVersion(0)
     setExportResult(null)
@@ -1082,29 +685,12 @@ function Captions({ tool }) {
 
   function startOver() {
     abortControllerRef.current?.abort()
-    previewProxyAbortControllerRef.current?.abort()
     exportAbortControllerRef.current?.abort()
     setFile(null)
     setFlowStep(1)
     audioCacheRef.current = null
-    setPreviewProxyFile(null)
     setMediaInfo(null)
     setPreviewDimensions({ width: 0, height: 0 })
-    setPreviewProxyStatus('idle')
-    setPreviewProxyProgress(null)
-    setPreviewProxyError('')
-    setPreviewTechnicalDetails('')
-    setPreviewDiagnostics({
-      errorCode: null,
-      errorMessage: '',
-      canPlayType: '',
-      frameAvailable: null,
-      readyState: 0,
-      videoWidth: 0,
-      networkState: 0,
-    })
-    previewFrameAvailableRef.current = false
-    previewProxyRequestedRef.current = null
     setFrameRate(null)
     setPreviewFrameVersion(0)
     setCurrentTime(0)
@@ -1154,14 +740,8 @@ function Captions({ tool }) {
   }
 
   function handleVideoSeeked(event) {
+    preview.videoHandlers.onSeeked(event)
     const video = event.currentTarget
-    if (
-      !previewFrameAvailableRef.current &&
-      video.currentSrc === previewUrl &&
-      video.videoWidth > 0
-    ) {
-      markPreviewFrameAvailable(video)
-    }
     setCurrentTime(video.currentTime)
     setPreviewFrameVersion((version) => version + 1)
   }
@@ -1259,7 +839,7 @@ function Captions({ tool }) {
 
   async function runCaptionExport() {
     if (!file || captions.length === 0 || isProcessing) return
-    const exportFile = exportUsesPreviewProxy ? previewProxyFile : file
+    const exportFile = exportUsesPreviewProxy ? preview.previewFile : file
     if (!exportFile) return
     const controller = new AbortController()
     exportAbortControllerRef.current = controller
@@ -1515,20 +1095,11 @@ function Captions({ tool }) {
                       videoProps={{
                         playsInline: true,
                         preload: 'metadata',
-                        onLoadStart: (event) =>
-                          updatePreviewDiagnosticsFromVideo(event.currentTarget),
                         onLoadedMetadata: handleVideoMetadata,
                         onLoadedData: handlePreviewLoadedData,
-                        onCanPlay: (event) =>
-                          updatePreviewDiagnosticsFromVideo(event.currentTarget),
-                        onWaiting: (event) =>
-                          updatePreviewDiagnosticsFromVideo(event.currentTarget),
-                        onStalled: (event) =>
-                          updatePreviewDiagnosticsFromVideo(event.currentTarget),
                         onSeeked: handleVideoSeeked,
                         onTimeUpdate: (event) => {
                           const video = event.currentTarget
-                          updatePreviewDiagnosticsFromVideo(video)
                           const time = video.currentTime
                           setCurrentTime(time)
                           const nextIndex = getActiveCaption(captions, time)
@@ -1537,7 +1108,7 @@ function Captions({ tool }) {
                         },
                         onPlay: () => setIsPlaying(true),
                         onPause: () => setIsPlaying(false),
-                        onError: handleVideoError,
+                        onError: preview.videoHandlers.onError,
                       }}
                     >
                       {fontsReady && (
@@ -1562,23 +1133,24 @@ function Captions({ tool }) {
                               : 'Getting ready'}
                         </div>
                       )}
-                      {previewProxyStatus === 'processing' && (
-                        <div className="captions-preview-badge" role="status">
-                          <span>
-                            Making a preview copy, first time only for large files
-                            {previewProxyProgress !== null
-                              ? ` · ${Math.round(previewProxyProgress)}%`
-                              : ''}
-                            {' · '}
-                            {formatElapsed(previewElapsed)}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => previewProxyAbortControllerRef.current?.abort()}
-                          >
-                            Cancel
-                          </button>
-                        </div>
+                      {preview.showPoster && (
+                        <PreviewPoster
+                          fileName={file.name}
+                          codec={preview.sourceInfo?.codec ?? mediaInfo?.codec}
+                          status={preview.status}
+                          progress={preview.progress}
+                          startedAt={preview.conversionStartedAt}
+                          message={preview.message}
+                          technicalDetails={preview.technicalDetails}
+                          note="Captions are made from the audio, so they keep working while the picture is unavailable."
+                          onCancel={preview.cancelConversion}
+                        />
+                      )}
+                      {!preview.showPoster && preview.status === 'converting' && (
+                        <PreviewCopyBadge
+                          progress={preview.progress}
+                          onCancel={preview.cancelConversion}
+                        />
                       )}
                     </VideoPreview>
                   </div>
@@ -1587,69 +1159,6 @@ function Captions({ tool }) {
                       Preparing caption fonts…
                     </p>
                   )}
-                  {previewProxyError && (
-                    <p className="captions-preview-error" role="status">
-                      {previewProxyError}
-                    </p>
-                  )}
-                  <details className="captions-preview-details">
-                    <summary>Preview details</summary>
-                    <dl>
-                      <div>
-                        <dt>Source resolution</dt>
-                        <dd>
-                          {mediaInfo?.width && mediaInfo?.height
-                            ? `${mediaInfo.width} × ${mediaInfo.height}`
-                            : previewDimensions.width && previewDimensions.height
-                              ? `${previewDimensions.width} × ${previewDimensions.height}`
-                              : 'Unavailable'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Video codec</dt>
-                        <dd>{mediaInfo?.codec || 'Unavailable'}</dd>
-                      </div>
-                      <div>
-                        <dt>Video error code</dt>
-                        <dd>{previewDiagnostics.errorCode ?? 'None'}</dd>
-                      </div>
-                      <div>
-                        <dt>Video error</dt>
-                        <dd>{previewDiagnostics.errorMessage || 'None'}</dd>
-                      </div>
-                      <div>
-                        <dt>canPlayType</dt>
-                        <dd>{previewDiagnostics.canPlayType || 'Not checked'}</dd>
-                      </div>
-                      <div>
-                        <dt>readyState</dt>
-                        <dd>{previewDiagnostics.readyState}</dd>
-                      </div>
-                      <div>
-                        <dt>videoWidth</dt>
-                        <dd>{previewDiagnostics.videoWidth}</dd>
-                      </div>
-                      <div>
-                        <dt>networkState</dt>
-                        <dd>{previewDiagnostics.networkState}</dd>
-                      </div>
-                      <div>
-                        <dt>First frame</dt>
-                        <dd>
-                          {previewDiagnostics.frameAvailable === null
-                            ? 'Waiting'
-                            : previewDiagnostics.frameAvailable
-                              ? 'Available'
-                              : 'Unavailable'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Preview copy</dt>
-                        <dd>{previewProxyStatus === 'done' ? 'Ready' : previewProxyStatus}</dd>
-                      </div>
-                    </dl>
-                    {previewTechnicalDetails && <pre>{previewTechnicalDetails}</pre>}
-                  </details>
                   <VideoPlayerControls
                     currentTime={currentTime}
                     duration={duration}
@@ -2210,7 +1719,7 @@ function Captions({ tool }) {
                             isProcessing ||
                             !fontsReady ||
                             exportWaitingForFrame ||
-                            (exportNeedsPreviewProxy && !previewProxyFile)
+                            (exportNeedsPreviewProxy && !preview.previewFile)
                           }
                           onClick={runCaptionExport}
                         >
