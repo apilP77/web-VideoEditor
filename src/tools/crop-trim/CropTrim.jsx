@@ -21,6 +21,7 @@ import {
 import { isVideoFile } from '../../shared/utils/mediaFiles'
 import { getMonotonicTime } from '../../shared/utils/timing'
 import { getMediaInfo } from '../../shared/media/mediaInfo'
+import { resolveVideoMetadata } from '../../shared/media/videoMetadata'
 import { useObjectUrl } from '../../shared/media/useObjectUrl'
 import './cropTrim.css'
 
@@ -54,6 +55,8 @@ function sameCrop(a, b) {
  */
 function CropTrim({ tool }) {
   const videoRef = useRef(null)
+  const videoFailedRef = useRef(false)
+  const appliedMetadataRef = useRef(null)
   const previewRef = useRef(null)
   const dragRef = useRef(null)
   const abortControllerRef = useRef(null)
@@ -77,6 +80,7 @@ function CropTrim({ tool }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [metadataError, setMetadataError] = useState('')
+  const [previewUnavailable, setPreviewUnavailable] = useState(false)
   const isExporting = status === 'processing'
 
   useEffect(() => {
@@ -88,20 +92,6 @@ function CropTrim({ tool }) {
     () => () => abortControllerRef.current?.abort(),
     [],
   )
-
-  useEffect(() => {
-    let active = true
-    setMediaInfo(UNKNOWN_MEDIA_INFO)
-    if (file) {
-      getMediaInfo(file).then((info) => {
-        if (active) setMediaInfo(info)
-      })
-    }
-
-    return () => {
-      active = false
-    }
-  }, [file])
 
   const { cardRef: resultBoxRef, highlighted: resultHighlighted } =
     useResultCardAttention(result)
@@ -147,45 +137,84 @@ function CropTrim({ tool }) {
     setActivePreset('Free')
     setError('')
     setMetadataError('')
+    setPreviewUnavailable(false)
+    videoFailedRef.current = false
+    appliedMetadataRef.current = null
   }
 
-  function handleMetadata() {
+  /**
+   * Sets size and duration from the video element, falling back to the
+   * file's own metadata when the browser cannot decode the picture.
+   */
+  function applyMetadata(info) {
     const video = videoRef.current
-    if (!video) return
+    const videoLoaded = Boolean(video && video.readyState >= 1 && !videoFailedRef.current)
+    const resolved = resolveVideoMetadata(videoLoaded ? video : null, info)
 
-    if (
-      !Number.isFinite(video.duration) ||
-      video.duration <= MIN_TRIM_SECONDS ||
-      video.videoWidth < 2 ||
-      video.videoHeight < 2
-    ) {
-      setMetadataError('This video has invalid dimensions or is too short to edit.')
+    if (!resolved.valid) {
+      // Only give up once both the browser and the file reader have answered.
+      if (info !== UNKNOWN_MEDIA_INFO && (videoLoaded || videoFailedRef.current)) {
+        setMetadataError(
+          "We couldn't read this video's size or length. Try another file or convert it to MP4.",
+        )
+        setStatus('error')
+      }
+      return
+    }
+    if (resolved.duration <= MIN_TRIM_SECONDS) {
+      setMetadataError('This video is too short to edit.')
       setStatus('error')
       return
     }
 
-    const size = { width: video.videoWidth, height: video.videoHeight }
+    setPreviewUnavailable(videoFailedRef.current || resolved.pictureVisible === false)
+    // The second source to report usually agrees; keep the user's edits.
+    // A ref is used because this also runs from an async callback.
+    const applied = appliedMetadataRef.current
     if (
-      videoSize.width === size.width &&
-      videoSize.height === size.height &&
-      duration === video.duration
+      applied &&
+      applied.width === resolved.width &&
+      applied.height === resolved.height &&
+      Math.abs(applied.duration - resolved.duration) < 0.05
     ) {
       return
     }
+    appliedMetadataRef.current = resolved
 
+    const size = { width: resolved.width, height: resolved.height }
     setVideoSize(size)
-    setDuration(video.duration)
-    setEndTime(video.duration)
+    setDuration(resolved.duration)
+    setEndTime(resolved.duration)
     setCrop({ x: 0, y: 0, w: size.width, h: size.height })
     setCurrentTime(0)
     setMetadataError('')
     setError('')
   }
 
-  function handleMetadataError(message) {
-    setMetadataError(message)
-    setStatus('error')
+  function handleMetadata() {
+    applyMetadata(mediaInfo)
   }
+
+  function handlePreviewError() {
+    videoFailedRef.current = true
+    applyMetadata(mediaInfo)
+  }
+
+  useEffect(() => {
+    let active = true
+    setMediaInfo(UNKNOWN_MEDIA_INFO)
+    if (file) {
+      getMediaInfo(file).then((info) => {
+        if (!active) return
+        setMediaInfo(info)
+        applyMetadata(info)
+      })
+    }
+
+    return () => {
+      active = false
+    }
+  }, [file])
 
   function setTrimStart(value) {
     setStartTime(Math.min(value, Math.max(0, endTime - MIN_TRIM_SECONDS)))
@@ -525,9 +554,7 @@ function CropTrim({ tool }) {
                       videoProps={{
                         playsInline: true,
                         onLoadedMetadata: handleMetadata,
-                        onError: () => handleMetadataError(
-                          'Could not read this video. Try a supported video file.',
-                        ),
+                        onError: handlePreviewError,
                         onTimeUpdate: handleTimeUpdate,
                         onPlay: handlePlay,
                         onPause: () => setIsPlaying(false),
@@ -590,6 +617,14 @@ function CropTrim({ tool }) {
                         </>
                       )}
                     </VideoPreview>
+
+                    {previewUnavailable && (
+                      <p className="tool-notice" role="status">
+                        This browser can't show this video's picture (common with iPhone
+                        HEVC/H.265 videos). You can still trim and crop by the numbers and
+                        export it.
+                      </p>
+                    )}
 
                     <VideoPlayerControls
                       currentTime={currentTime}
