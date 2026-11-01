@@ -5,6 +5,7 @@ import {
   trimVideo,
 } from '../../shared/media/engine'
 import Button from '../../shared/components/Button'
+import PreviewPoster from '../../shared/components/PreviewPoster'
 import ProcessingRing from '../../shared/components/ProcessingRing'
 import ResultCard from '../../shared/components/ResultCard'
 import ToolLayout from '../../shared/components/ToolLayout'
@@ -21,7 +22,8 @@ import {
 import { isVideoFile } from '../../shared/utils/mediaFiles'
 import { getMonotonicTime } from '../../shared/utils/timing'
 import { getMediaInfo } from '../../shared/media/mediaInfo'
-import { useObjectUrl } from '../../shared/media/useObjectUrl'
+import { resolveVideoMetadata } from '../../shared/media/videoMetadata'
+import { usePreviewFallback } from '../../shared/media/usePreviewFallback'
 import './cropTrim.css'
 
 const ASPECT_PRESETS = [
@@ -54,11 +56,15 @@ function sameCrop(a, b) {
  */
 function CropTrim({ tool }) {
   const videoRef = useRef(null)
+  const videoFailedRef = useRef(false)
+  const appliedMetadataRef = useRef(null)
   const previewRef = useRef(null)
   const dragRef = useRef(null)
   const abortControllerRef = useRef(null)
   const [file, setFile] = useState(null)
-  const sourceUrl = useObjectUrl(file)
+  // A 960px copy is made only when the browser cannot show the picture, so
+  // there is something to crop against; export always uses the original.
+  const preview = usePreviewFallback({ file, videoRef, proxyLargeSources: false })
   const [result, setResult] = useState(null)
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 })
   const [mediaInfo, setMediaInfo] = useState(UNKNOWN_MEDIA_INFO)
@@ -88,20 +94,6 @@ function CropTrim({ tool }) {
     () => () => abortControllerRef.current?.abort(),
     [],
   )
-
-  useEffect(() => {
-    let active = true
-    setMediaInfo(UNKNOWN_MEDIA_INFO)
-    if (file) {
-      getMediaInfo(file).then((info) => {
-        if (active) setMediaInfo(info)
-      })
-    }
-
-    return () => {
-      active = false
-    }
-  }, [file])
 
   const { cardRef: resultBoxRef, highlighted: resultHighlighted } =
     useResultCardAttention(result)
@@ -147,45 +139,88 @@ function CropTrim({ tool }) {
     setActivePreset('Free')
     setError('')
     setMetadataError('')
+    videoFailedRef.current = false
+    appliedMetadataRef.current = null
   }
 
-  function handleMetadata() {
+  /**
+   * Sets size and duration from the video element, falling back to the
+   * file's own metadata when the browser cannot decode the picture.
+   */
+  function applyMetadata(info) {
     const video = videoRef.current
-    if (!video) return
+    const videoLoaded = Boolean(video && video.readyState >= 1 && !videoFailedRef.current)
+    const resolved = resolveVideoMetadata(videoLoaded ? video : null, info)
 
-    if (
-      !Number.isFinite(video.duration) ||
-      video.duration <= MIN_TRIM_SECONDS ||
-      video.videoWidth < 2 ||
-      video.videoHeight < 2
-    ) {
-      setMetadataError('This video has invalid dimensions or is too short to edit.')
+    if (!resolved.valid) {
+      // Only give up once both the browser and the file reader have answered.
+      if (info !== UNKNOWN_MEDIA_INFO && (videoLoaded || videoFailedRef.current)) {
+        setMetadataError(
+          "We couldn't read this video's size or length. Try another file or convert it to MP4.",
+        )
+        setStatus('error')
+      }
+      return
+    }
+    if (resolved.duration <= MIN_TRIM_SECONDS) {
+      setMetadataError('This video is too short to edit.')
       setStatus('error')
       return
     }
 
-    const size = { width: video.videoWidth, height: video.videoHeight }
+    // The second source to report usually agrees; keep the user's edits.
+    // A ref is used because this also runs from an async callback.
+    const applied = appliedMetadataRef.current
     if (
-      videoSize.width === size.width &&
-      videoSize.height === size.height &&
-      duration === video.duration
+      applied &&
+      applied.width === resolved.width &&
+      applied.height === resolved.height &&
+      Math.abs(applied.duration - resolved.duration) < 0.05
     ) {
       return
     }
+    appliedMetadataRef.current = resolved
 
+    const size = { width: resolved.width, height: resolved.height }
     setVideoSize(size)
-    setDuration(video.duration)
-    setEndTime(video.duration)
+    setDuration(resolved.duration)
+    setEndTime(resolved.duration)
     setCrop({ x: 0, y: 0, w: size.width, h: size.height })
     setCurrentTime(0)
     setMetadataError('')
     setError('')
   }
 
-  function handleMetadataError(message) {
-    setMetadataError(message)
-    setStatus('error')
+  function handleMetadata(event) {
+    preview.videoHandlers.onLoadedMetadata(event)
+    // The preview copy is smaller; size, length and crop stay in the
+    // original's pixels.
+    if (event.currentTarget.currentSrc !== preview.sourceUrl) return
+    applyMetadata(mediaInfo)
   }
+
+  function handlePreviewError(event) {
+    preview.videoHandlers.onError(event)
+    if (event.currentTarget.currentSrc !== preview.sourceUrl) return
+    videoFailedRef.current = true
+    applyMetadata(mediaInfo)
+  }
+
+  useEffect(() => {
+    let active = true
+    setMediaInfo(UNKNOWN_MEDIA_INFO)
+    if (file) {
+      getMediaInfo(file).then((info) => {
+        if (!active) return
+        setMediaInfo(info)
+        applyMetadata(info)
+      })
+    }
+
+    return () => {
+      active = false
+    }
+  }, [file])
 
   function setTrimStart(value) {
     setStartTime(Math.min(value, Math.max(0, endTime - MIN_TRIM_SECONDS)))
@@ -319,9 +354,8 @@ function CropTrim({ tool }) {
   }
 
   function getExportCrop() {
-    const video = videoRef.current
     const preview = previewRef.current
-    if (!video || !preview || !crop) {
+    if (!preview || !crop) {
       throw new Error('Wait for the video preview to finish loading.')
     }
 
@@ -335,13 +369,17 @@ function CropTrim({ tool }) {
     return displayedCropToVideoPixels(
       displayCrop,
       { width: bounds.width, height: bounds.height },
-      { width: video.videoWidth, height: video.videoHeight },
+      // Always the original's pixels: the element may be playing the smaller
+      // preview copy, or report 0 when it cannot decode the picture.
+      { width: videoSize.width, height: videoSize.height },
     )
   }
 
   async function exportVideo() {
     if (!file || !hasMetadata || !hasChanges) return
 
+    // A running preview copy is paused by the FFmpeg client and resumes
+    // after the export, so the export never waits behind it.
     setStatus('processing')
     setProgress(null)
     const startedAt = getMonotonicTime()
@@ -361,8 +399,8 @@ function CropTrim({ tool }) {
         },
       }
       let output
+      const exportCrop = cropChanged ? getExportCrop() : null
       if (trimChanged && cropChanged) {
-        const exportCrop = getExportCrop()
         output = await trimAndCrop(
           file,
           startTime,
@@ -377,20 +415,19 @@ function CropTrim({ tool }) {
           exact: exactTrim,
         })
       } else {
-        const exportCrop = getExportCrop()
         output = await cropVideo(file, exportCrop, videoSize, options)
       }
       const outputDuration = trimChanged ? endTime - startTime : duration
-      const outputResolution = cropChanged
-        ? `${crop.w} × ${crop.h}`
+      const outputResolution = exportCrop
+        ? `${exportCrop.w} × ${exportCrop.h}`
         : `${videoSize.width} × ${videoSize.height}`
       setResult({
         ...output,
         url: URL.createObjectURL(output.blob),
         durationLabel: formatTime(outputDuration),
         resolution: outputResolution,
-        aspectRatio: cropChanged
-          ? crop.w / crop.h
+        aspectRatio: exportCrop
+          ? exportCrop.w / exportCrop.h
           : videoSize.width / videoSize.height,
         settings: {
           startTime,
@@ -505,7 +542,7 @@ function CropTrim({ tool }) {
 
                     <VideoPreview
                       videoRef={videoRef}
-                      src={sourceUrl}
+                      src={preview.previewUrl}
                       frameClassName="preview-frame"
                       videoClassName="video-preview-video-fill source-video"
                       frameRef={previewRef}
@@ -513,6 +550,9 @@ function CropTrim({ tool }) {
                         aspectRatio: hasMetadata
                           ? `${videoSize.width} / ${videoSize.height}`
                           : '16 / 9',
+                        '--preview-aspect': hasMetadata
+                          ? videoSize.width / videoSize.height
+                          : 16 / 9,
                       }}
                       frameProps={{
                         onPointerMove: handleCropPointerMove,
@@ -522,15 +562,15 @@ function CropTrim({ tool }) {
                       videoProps={{
                         playsInline: true,
                         onLoadedMetadata: handleMetadata,
-                        onError: () => handleMetadataError(
-                          'Could not read this video. Try a supported video file.',
-                        ),
+                        onLoadedData: preview.videoHandlers.onLoadedData,
+                        onSeeked: preview.videoHandlers.onSeeked,
+                        onError: handlePreviewError,
                         onTimeUpdate: handleTimeUpdate,
                         onPlay: handlePlay,
                         onPause: () => setIsPlaying(false),
                       }}
                     >
-                      {displayedCrop && (
+                      {displayedCrop && !preview.showPoster && (
                         <>
                           <div
                             className="crop-dim crop-dim-top"
@@ -585,6 +625,20 @@ function CropTrim({ tool }) {
                             ))}
                           </div>
                         </>
+                      )}
+                      {preview.showPoster && (
+                        <PreviewPoster
+                          fileName={file.name}
+                          codec={preview.sourceInfo?.codec}
+                          status={preview.status}
+                          progress={preview.progress}
+                          startedAt={preview.conversionStartedAt}
+                          progressUpdatedAt={preview.progressUpdatedAt}
+                          message={preview.message}
+                          technicalDetails={preview.technicalDetails}
+                          note="You can still trim, pick a crop aspect ratio and export. The original file is used."
+                          onCancel={preview.cancelConversion}
+                        />
                       )}
                     </VideoPreview>
 

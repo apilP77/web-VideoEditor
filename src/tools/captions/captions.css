@@ -75,11 +75,12 @@
   line-height: 1.5;
 }
 
+/* Preview on the left stays in view; each step's panel sits beside it. */
 .captions-editor-layout {
-  grid-template-columns: minmax(0, 1.2fr) minmax(310px, 0.88fr);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 1fr);
 }
 
-.captions-editor-layout .editor-controls {
+.captions-editor-layout .editor-preview-column {
   position: sticky;
   top: 16px;
 }
@@ -123,7 +124,7 @@
   position: relative;
   display: grid;
   max-width: 100%;
-  max-height: min(60vh, 520px);
+  max-height: min(50vh, 440px);
   flex: 0 1 auto;
   overflow: hidden;
   place-items: center;
@@ -146,96 +147,6 @@
   pointer-events: none;
 }
 
-.captions-preview-badge {
-  position: absolute;
-  z-index: 2;
-  top: 10px;
-  right: 10px;
-  left: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border: 1px solid rgb(255 255 255 / 14%);
-  border-radius: 8px;
-  padding: 7px 10px;
-  background: rgb(12 10 16 / 82%);
-  color: #f0ebf7;
-  font-size: 0.75rem;
-  line-height: 1.4;
-  backdrop-filter: blur(8px);
-}
-
-.captions-preview-badge button {
-  flex: 0 0 auto;
-  min-height: 44px;
-  border: 0;
-  padding: 0 6px;
-  background: transparent;
-  color: #d1c4e8;
-  font: inherit;
-  cursor: pointer;
-}
-
-.captions-preview-badge button:hover {
-  color: #ffffff;
-}
-
-.captions-preview-badge button:focus-visible {
-  outline: 2px solid #c4b5fd;
-  outline-offset: 2px;
-}
-
-.captions-preview-details {
-  color: #aaa3b2;
-  font-size: 0.82rem;
-}
-
-.captions-preview-details summary {
-  min-height: 44px;
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-}
-
-.captions-preview-details dl {
-  display: grid;
-  gap: 7px;
-  margin: 0;
-}
-
-.captions-preview-details dl > div {
-  display: grid;
-  grid-template-columns: minmax(100px, 0.7fr) minmax(0, 1fr);
-  gap: 12px;
-}
-
-.captions-preview-details dt {
-  color: #c9c1d2;
-}
-
-.captions-preview-details dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.captions-preview-details pre {
-  overflow: auto;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.captions-preview-error {
-  margin: 0;
-  border: 1px solid #554b39;
-  border-radius: 9px;
-  padding: 10px 12px;
-  background: #211d16;
-  color: #d7c8a9;
-  font-size: 0.84rem;
-  line-height: 1.5;
-}
-
 .captions-font-loading {
   margin: 8px 0 0;
   border-radius: 6px;
@@ -249,8 +160,17 @@
   margin-top: 14px;
 }
 
-.captions-editor-panel {
-  min-height: 220px;
+.captions-redo > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  color: #c9c1d2;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.captions-redo[open] > summary {
+  margin-bottom: 10px;
 }
 
 .captions-editor-panel .panel-heading {
@@ -259,7 +179,7 @@
 
 .captions-list {
   display: grid;
-  max-height: 620px;
+  max-height: min(52vh, 460px);
   gap: 10px;
   overflow: auto;
   margin: 0;
@@ -491,7 +411,7 @@
 
 .captions-settings-content {
   display: grid;
-  max-height: min(65vh, 610px);
+  max-height: min(52vh, 460px);
   gap: 13px;
   overflow-y: auto;
   margin-top: 14px;
@@ -850,26 +770,225 @@
   min-height: 44px;
 }
 
+/* The side panel is narrow, so stack the dial above the stage list. */
 .captions-transcription-panel .processing-ring {
-  grid-template-columns: 130px minmax(0, 1fr);
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.captions-transcription-panel .processing-ring-stage-panel {
+  width: 100%;
+}
+
+.captions-working {
+  animation: captions-fade-up 320ms ease-out;
+}
+
+.captions-working-heading h2 {
+  margin: 0 0 4px;
+  color: #f5f2fa;
+  font-size: 1.04rem;
+}
+
+.captions-working-heading p {
+  margin: 0;
+  color: #aaa3b2;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+/* Live transcript shown in the editor while words are recognised. */
+.captions-live {
+  display: grid;
   gap: 10px;
   margin-top: 14px;
-  padding: 12px;
+  border: 1px dashed #3d3550;
+  border-radius: 12px;
+  padding: 14px;
+  background: linear-gradient(180deg, rgba(167, 139, 250, 0.06), transparent 70%);
 }
 
-.captions-transcription-panel .processing-ring-large {
-  width: 120px;
-  height: 120px;
+.captions-live-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #c4b5fd;
+  font-size: 0.78rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
-.captions-transcription-panel .processing-ring-center {
-  top: 37px;
-  font-size: 1.4rem;
+.captions-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f472b6;
+  box-shadow: 0 0 0 0 rgba(244, 114, 182, 0.6);
+  animation: captions-live-pulse 1.6s ease-out infinite;
 }
 
-.captions-transcription-panel .processing-ring-stage {
-  gap: 6px;
+.captions-live-text {
+  max-height: 150px;
+  margin: 0;
+  overflow-y: auto;
+  color: #ece6f6;
+  font-size: 0.92rem;
+  line-height: 1.65;
+  scroll-behavior: smooth;
+}
+
+.captions-live-skeleton.is-editor {
+  padding: 4px 0 8px;
+}
+
+.captions-live-word.is-new {
+  animation: captions-word-in 360ms ease-out both;
+  animation-delay: var(--word-delay, 0ms);
+}
+
+.captions-live-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #c4b5fd;
+  animation: captions-caret 1s steps(1) infinite;
+}
+
+.captions-live-skeleton {
+  display: grid;
+  gap: 10px;
+}
+
+.captions-live-skeleton span {
+  height: 12px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #26212f 0%, #3a3248 50%, #26212f 100%);
+  background-size: 200% 100%;
+  animation: captions-shimmer 1.4s linear infinite;
+}
+
+.captions-live-skeleton span:nth-child(2) {
+  width: 86%;
+}
+
+.captions-live-skeleton span:nth-child(3) {
+  width: 62%;
+}
+
+/* Small "listening" badge over the video while captions are being made. */
+.captions-listening-badge {
+  position: absolute;
+  z-index: 2;
+  bottom: 12px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 999px;
+  padding: 6px 12px 6px 10px;
+  background: rgb(12 10 16 / 78%);
+  color: #f0ebf7;
   font-size: 0.76rem;
+  font-weight: 600;
+  transform: translateX(-50%);
+  backdrop-filter: blur(6px);
+  animation: captions-fade-up 320ms ease-out;
+}
+
+.captions-listening-bars {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 14px;
+}
+
+.captions-listening-bars span {
+  width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(180deg, #f0abfc, #a78bfa);
+  transform-origin: center;
+  animation: captions-eq 0.9s ease-in-out infinite;
+}
+
+.captions-listening-bars span:nth-child(2) {
+  animation-delay: -0.3s;
+}
+
+.captions-listening-bars span:nth-child(3) {
+  animation-delay: -0.6s;
+}
+
+.captions-listening-bars span:nth-child(4) {
+  animation-delay: -0.15s;
+}
+
+@keyframes captions-fade-up {
+  from {
+    opacity: 0;
+    transform: translate(var(--fade-x, 0), 6px);
+  }
+}
+
+.captions-listening-badge {
+  --fade-x: -50%;
+}
+
+@keyframes captions-word-in {
+  from {
+    opacity: 0;
+    filter: blur(3px);
+  }
+}
+
+@keyframes captions-caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+@keyframes captions-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes captions-live-pulse {
+  70% {
+    box-shadow: 0 0 0 7px rgba(244, 114, 182, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 114, 182, 0);
+  }
+}
+
+@keyframes captions-eq {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .captions-working,
+  .captions-listening-badge,
+  .captions-live-word.is-new,
+  .captions-live-caret,
+  .captions-live-dot,
+  .captions-live-skeleton span,
+  .captions-listening-bars span {
+    animation: none;
+  }
 }
 
 .captions-error {
@@ -906,7 +1025,7 @@
     grid-template-columns: 1fr;
   }
 
-  .captions-editor-layout .editor-controls {
+  .captions-editor-layout .editor-preview-column {
     position: static;
   }
 }
@@ -938,15 +1057,6 @@
 
   .caption-row-actions button {
     min-width: 34px;
-  }
-
-  .captions-transcription-panel .processing-ring {
-    grid-template-columns: 1fr;
-    justify-items: center;
-  }
-
-  .captions-transcription-panel .processing-ring-stage-panel {
-    width: 100%;
   }
 
   .captions-export-action-row {

@@ -121,20 +121,31 @@ for transcription. Small audio-only files can use browser decoding as a fast
 path. Decoded samples stay in memory for transcription retries and are released
 when the selected file is changed or cleared.
 
-The Captions preview checks browser video dimensions, codec, `canPlayType`,
-decode errors, whether a frame arrives, and whether the rendered frame is
-fully black. A 4K source or an undecodable picture gets a small local preview
-copy encoded at 960 pixels on its long edge and 24 fps. When the browser can
-decode the source, Mediabunny and WebCodecs scale it; when it cannot, the app
-tries FFmpeg.wasm first. While conversion runs, the preview shows a poster
-card instead of an unexplained black frame. The proxy is only needed for
-preview and is never used for transcription. Export uses the original file
-when its picture decodes in the browser; otherwise it uses the preview copy
-and warns that the output resolution is limited to the proxy.
+Every video preview (Captions, Transcript, Speed, and Crop and trim) uses the
+shared `usePreviewFallback` hook in `src/shared/media/`. It checks whether the
+browser really draws the picture: a decode error, no picture size, no frame
+within 4 seconds, or a fully black frame (after one look further in) all mean
+the picture is unavailable. Then the `PreviewPoster` card replaces the black
+frame and a small local preview copy is encoded at 960 pixels on its long edge
+and 24 fps, with progress, elapsed time, a Skip button, and a "still working"
+note after a minute without progress. When the copy is ready it replaces the
+poster and playback continues from the same position.
 
-If neither local conversion path can read the source, the tool explains that
-the audio can still be captioned but preview and video export need a browser
-with hardware HEVC support or an H.264 MP4 conversion.
+Captions and Transcript also make a copy of decodable sources larger than
+about 2K, shown with a small badge while the original keeps playing; Speed and
+Crop and trim do not. When the browser can decode the source, Mediabunny and
+WebCodecs scale it; when it cannot, the app tries FFmpeg.wasm first.
+
+The preview copy is only for viewing. Transcription, Speed, and Crop and trim
+always use the original file, and sizes, durations, and crop rectangles stay
+in the original's pixels. FFmpeg runs one job at a time, so audio extraction,
+exports, and metadata reads pause a running preview copy, which restarts after
+them. Captions export uses the original when its picture decodes and the
+preview copy (limited to 960 pixels) when it does not.
+
+If the copy cannot be made, the poster says so, with technical details. Out-of-
+memory failures in a preview copy or an export get a specific message that
+suggests closing other tabs or converting to a 1080p H.264 MP4.
 
 If WebCodecs or the fast encoder fails, the tool records a canvas and the
 source audio with MediaRecorder as WebM. This fallback plays through the
@@ -161,7 +172,8 @@ src/
     batch-captions/
     crop-trim/
   shared/
-    components/            # UploadBox, ProcessingRing, ResultCard, ToolLayout
+    components/            # UploadBox, ProcessingRing, ResultCard, ToolLayout, PreviewPoster
+    media/                 # usePreviewFallback, preview copy, media info, audio decoding
     ffmpeg/                # loader + helper functions (trim, crop, speed, extractAudio)
     whisper/               # worker + transcribe(chunk) API
     captions/              # chunking, stitching, line grouping, templates, renderer

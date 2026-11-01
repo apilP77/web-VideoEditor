@@ -1,68 +1,140 @@
 .processing-ring {
+  position: relative;
   display: grid;
   grid-template-columns: 160px minmax(0, 1fr);
   align-items: center;
-  gap: 20px;
-  border: 1px solid #302b3b;
-  border-radius: 12px;
-  padding: 18px;
-  background: #1a1821;
+  gap: 22px;
+  overflow: hidden;
+  border: 1px solid #3a3150;
+  border-radius: 14px;
+  padding: 20px;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(167, 139, 250, 0.16), transparent 60%),
+    radial-gradient(90% 80% at 100% 100%, rgba(240, 171, 252, 0.08), transparent 60%),
+    #1a1724;
+}
+
+.processing-ring.is-failed {
+  border-color: #5a2f3a;
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(248, 113, 113, 0.12), transparent 60%),
+    #1d1720;
 }
 
 .processing-ring-overview {
-  position: relative;
   display: grid;
   justify-items: center;
 }
 
+.processing-ring-dial {
+  position: relative;
+  display: grid;
+  place-items: center;
+}
+
+.processing-ring-dial::before {
+  position: absolute;
+  inset: 22px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(167, 139, 250, 0.22), transparent 70%);
+  content: '';
+  animation: processing-ring-breathe 2.6s ease-in-out infinite;
+}
+
+.processing-ring.is-failed .processing-ring-dial::before {
+  background: radial-gradient(circle, rgba(248, 113, 113, 0.18), transparent 70%);
+  animation: none;
+}
+
 .processing-ring-large {
+  position: relative;
   transform: rotate(-90deg);
   overflow: visible;
 }
 
 .processing-ring-track,
-.processing-ring-progress {
+.processing-ring-progress,
+.processing-ring-sweep {
   fill: none;
-  stroke-width: 8;
+  stroke-width: 9;
 }
 
 .processing-ring-track {
-  stroke: #383342;
+  stroke: #2e2839;
 }
 
 .processing-ring-progress {
-  stroke: #a78bfa;
   stroke-linecap: round;
-  transition: stroke-dashoffset 220ms ease;
+  filter: drop-shadow(0 0 6px rgba(167, 139, 250, 0.55));
+  transition: stroke-dashoffset 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* A faint highlight that keeps travelling around the track so the dial
+   never looks frozen while a long stage reports no new numbers. */
+.processing-ring-sweep {
+  stroke: rgba(240, 171, 252, 0.28);
+  stroke-linecap: round;
+  transform-origin: 70px 70px;
+  animation: processing-ring-spin 2.4s linear infinite;
 }
 
 .processing-ring-center {
   position: absolute;
-  top: 45px;
-  color: #f4efff;
-  font-size: 1.65rem;
-  font-weight: 700;
+  display: flex;
+  align-items: baseline;
+  color: #f7f3ff;
+  font-size: 2rem;
+  font-weight: 750;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
 }
 
+.processing-ring-center small {
+  margin-left: 1px;
+  color: #c4b5fd;
+  font-size: 0.95rem;
+  font-weight: 650;
+}
+
+.processing-ring-dots {
+  display: flex;
+  gap: 5px;
+}
+
+.processing-ring-dots span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #c4b5fd;
+  animation: processing-ring-dot 1.2s ease-in-out infinite;
+}
+
+.processing-ring-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.processing-ring-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
 .processing-ring-current-stage {
-  margin: 8px 0 2px;
-  color: #eee8f5;
-  font-size: 0.9rem;
-  font-weight: 600;
+  margin: 12px 0 2px;
+  color: #f1ecfa;
+  font-size: 0.92rem;
+  font-weight: 650;
   text-align: center;
 }
 
 .processing-ring-elapsed {
   margin: 0;
-  color: #b7afc6;
-  font-size: 0.8rem;
+  color: #9d95ac;
+  font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
 }
 
 .processing-ring-stages {
   display: grid;
-  gap: 10px;
+  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -70,88 +142,87 @@
 
 .processing-ring-stage {
   display: grid;
-  min-height: 32px;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 22px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  color: #817a8d;
+  column-gap: 10px;
+  border-radius: 9px;
+  padding: 7px 8px;
+  color: #7d7689;
   font-size: 0.86rem;
+  transition: background 300ms ease, color 300ms ease;
 }
 
 .processing-ring-stage.is-active {
-  color: #eee8f5;
+  background: rgba(167, 139, 250, 0.1);
+  color: #f1ecfa;
   font-weight: 600;
 }
 
 .processing-ring-stage.is-done {
-  color: #bde8cc;
+  color: #b9e6c9;
 }
 
 .processing-ring-stage.is-failed {
+  background: rgba(248, 113, 113, 0.1);
   color: #ffb4b4;
 }
 
-.processing-ring-small-wrap {
-  position: relative;
+.processing-ring-stage-icon {
   display: grid;
-  width: 28px;
-  height: 28px;
+  width: 20px;
+  height: 20px;
   place-items: center;
-  color: #c4b5fd;
-  font-size: 0.52rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.processing-ring-small-wrap svg {
-  position: absolute;
-  inset: 0;
-  width: 28px;
-  height: 28px;
-  transform: rotate(-90deg);
-}
-
-.processing-ring-small-track,
-.processing-ring-small-progress {
-  fill: none;
-  stroke-width: 3;
-}
-
-.processing-ring-small-track {
-  stroke: #403a4b;
-}
-
-.processing-ring-small-progress {
-  stroke: #a78bfa;
-  stroke-linecap: round;
-}
-
-.processing-ring-small-wrap > span {
-  position: relative;
-}
-
-.processing-ring-stage-waiting {
-  display: block;
-  width: 12px;
-  height: 12px;
-  justify-self: center;
-  border: 2px solid #50495a;
   border-radius: 50%;
 }
 
-.processing-ring-stage-check {
+.processing-ring-stage-icon.is-waiting {
+  width: 10px;
+  height: 10px;
   justify-self: center;
-  color: #6ed295;
+  border: 2px solid #4b4458;
 }
 
-.processing-ring-stage-failed {
+.processing-ring-stage-icon.is-active {
+  width: 12px;
+  height: 12px;
   justify-self: center;
+  background: #c4b5fd;
+  box-shadow: 0 0 0 0 rgba(196, 181, 253, 0.6);
+  animation: processing-ring-pulse 1.6s ease-out infinite;
+}
+
+.processing-ring-stage-icon.is-done {
+  background: rgba(110, 210, 149, 0.16);
+  color: #6ed295;
+  animation: processing-ring-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.processing-ring-stage-icon.is-failed {
+  background: rgba(248, 113, 113, 0.18);
   color: #ff7474;
 }
 
-.processing-ring-stage-percent {
-  color: #c4b5fd;
-  font-size: 0.76rem;
-  font-variant-numeric: tabular-nums;
+.processing-ring-stage-bar {
+  position: relative;
+  grid-column: 2;
+  height: 4px;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #2e2839;
+}
+
+.processing-ring-stage-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #a78bfa, #f0abfc);
+  transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.processing-ring-stage-bar.is-indeterminate > span {
+  width: 35%;
+  animation: processing-ring-slide 1.3s ease-in-out infinite;
 }
 
 .processing-ring-detail,
@@ -168,12 +239,13 @@
 }
 
 .processing-ring-cancel {
-  min-height: 44px;
-  margin-top: 12px;
+  min-height: 40px;
+  margin-top: 14px;
 }
 
 .processing-ring.is-failed .processing-ring-progress {
   stroke: #f87171;
+  filter: drop-shadow(0 0 6px rgba(248, 113, 113, 0.45));
 }
 
 .processing-ring.is-failed .processing-ring-center {
@@ -181,17 +253,65 @@
 }
 
 .processing-ring-large.is-indeterminate .processing-ring-progress {
+  transform-origin: 70px 70px;
   animation: processing-ring-spin 1.5s linear infinite;
-}
-
-.processing-ring-small-wrap .is-indeterminate .processing-ring-small-progress {
-  animation: processing-ring-spin 1.2s linear infinite;
-  transform-origin: center;
 }
 
 @keyframes processing-ring-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes processing-ring-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.94);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+}
+
+@keyframes processing-ring-pulse {
+  70% {
+    box-shadow: 0 0 0 8px rgba(196, 181, 253, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(196, 181, 253, 0);
+  }
+}
+
+@keyframes processing-ring-pop {
+  from {
+    transform: scale(0.4);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@keyframes processing-ring-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: translateY(0);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+}
+
+@keyframes processing-ring-slide {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(320%);
   }
 }
 
@@ -208,21 +328,22 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .processing-ring-progress {
+  .processing-ring-progress,
+  .processing-ring-stage-bar > span {
     transition: none;
   }
 
+  .processing-ring-dial::before,
+  .processing-ring-sweep,
   .processing-ring-large.is-indeterminate .processing-ring-progress,
-  .processing-ring-small-wrap .is-indeterminate .processing-ring-small-progress {
+  .processing-ring-stage-icon.is-active,
+  .processing-ring-stage-icon.is-done,
+  .processing-ring-dots span,
+  .processing-ring-stage-bar.is-indeterminate > span {
     animation: none;
   }
 
-  .processing-ring-large.is-indeterminate + .processing-ring-center::after {
-    content: ' waiting';
-    display: block;
-    margin-top: 2px;
-    color: #b7afc6;
-    font-size: 0.6rem;
-    font-weight: 400;
+  .processing-ring-sweep {
+    display: none;
   }
 }

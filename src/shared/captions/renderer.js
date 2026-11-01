@@ -11,26 +11,55 @@ function getWordText(word, style) {
   return style.allCaps ? word.word.toLocaleUpperCase() : word.word
 }
 
-function getLines(ctx, words, style, maxWidth) {
+function wrapWords(measured, spaceWidth, maxWidth) {
   const lines = []
   let line = []
   let lineWidth = 0
 
-  for (const [wordIndex, word] of words.entries()) {
-    const text = getWordText(word, style)
-    const width = ctx.measureText(text).width
-    const nextWidth = line.length ? lineWidth + ctx.measureText(' ').width + width : width
+  for (const word of measured) {
+    const nextWidth = line.length ? lineWidth + spaceWidth + word.width : word.width
     if (line.length && nextWidth > maxWidth) {
       lines.push(line)
       line = []
       lineWidth = 0
     }
-    const leading = line.length ? ctx.measureText(' ').width : 0
-    line.push({ ...word, displayText: text, width, leading, wordIndex })
-    lineWidth += leading + width
+    const leading = line.length ? spaceWidth : 0
+    line.push({ ...word, leading })
+    lineWidth += leading + word.width
   }
   if (line.length) lines.push(line)
   return lines
+}
+
+/**
+ * Wraps caption words into balanced lines no wider than `maxWidth`.
+ *
+ * @param {CanvasRenderingContext2D} ctx Context with the caption font set.
+ * @param {Array<{word: string}>} words Caption words.
+ * @param {object} style Caption style model.
+ * @param {number} maxWidth Maximum line width in pixels.
+ * @returns {Array<Array<object>>} Lines of measured words.
+ */
+export function getCaptionLines(ctx, words, style, maxWidth) {
+  const spaceWidth = ctx.measureText(' ').width
+  const measured = words.map((word, wordIndex) => {
+    const displayText = getWordText(word, style)
+    return { ...word, displayText, width: ctx.measureText(displayText).width, wordIndex }
+  })
+  const lines = wrapWords(measured, spaceWidth, maxWidth)
+  if (lines.length < 2) return lines
+
+  // Greedy wrapping can leave a single short word on the last line. Find the
+  // narrowest width that still needs the same number of lines so the lines
+  // come out evenly balanced.
+  let low = 0
+  let high = maxWidth
+  for (let step = 0; step < 16; step += 1) {
+    const middle = (low + high) / 2
+    if (wrapWords(measured, spaceWidth, middle).length > lines.length) low = middle
+    else high = middle
+  }
+  return wrapWords(measured, spaceWidth, high)
 }
 
 function roundedRect(ctx, x, y, width, height, radius) {
@@ -94,7 +123,7 @@ export function drawCaption(ctx, caption, time, style, width, height) {
   ctx.textBaseline = 'alphabetic'
   ctx.shadowColor = style.glow ? style.highlightColor : '#000000'
   ctx.shadowBlur = style.glow ? fontSize * 0.55 : style.shadow ? fontSize * 0.16 : 0
-  const lines = getLines(ctx, caption.words, style, width * MAX_TEXT_WIDTH_RATIO)
+  const lines = getCaptionLines(ctx, caption.words, style, width * MAX_TEXT_WIDTH_RATIO)
   const lineHeight = fontSize * 1.22
   const paddingX = fontSize * 0.38
   const paddingY = fontSize * 0.18
@@ -174,7 +203,10 @@ export function drawCaption(ctx, caption, time, style, width, height) {
       const textColor = isPill
         ? getContrastingTextColor(style.highlightColor)
         : style.textColor
-      drawText(ctx, word, -word.width / 2, 0, style, isActive, textColor)
+      // The context origin is already the word's centre and the text is
+      // centre-aligned, so draw at 0. Offsetting by -width/2 here shifted
+      // every word half its width left, overlapping the previous word.
+      drawText(ctx, word, 0, 0, style, isActive, textColor)
       ctx.textAlign = previousAlign
       ctx.restore()
       x += word.width

@@ -21,8 +21,15 @@
   object-fit: contain;
 }
 
+/* Fill mode: the video covers the frame exactly, so overlays positioned
+   against the frame (such as the crop box) line up with the picture. The
+   frame, not the video, is responsible for the size limit. */
 .video-preview-video.video-preview-video-fill {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+  max-width: none;
+  max-height: none;
   object-fit: fill;
 }

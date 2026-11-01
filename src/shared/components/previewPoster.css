@@ -1,0 +1,168 @@
+.preview-poster {
+  position: absolute;
+  z-index: 3;
+  inset: 0;
+  display: grid;
+  overflow-y: auto;
+  place-items: center;
+  padding: 16px;
+  background:
+    radial-gradient(90% 70% at 50% 30%, rgba(167, 139, 250, 0.16), transparent 70%),
+    #0d0b12;
+}
+
+.preview-poster-card {
+  display: grid;
+  max-width: 340px;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.preview-poster-icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid #3d3550;
+  border-radius: 12px;
+  background: #1c1826;
+  color: #c4b5fd;
+}
+
+.preview-poster.is-failed .preview-poster-icon {
+  border-color: #5a3a42;
+  color: #fca5a5;
+}
+
+.preview-poster-title {
+  color: #f5f2fa;
+  font-size: 0.98rem;
+}
+
+.preview-poster-file {
+  max-width: 100%;
+  overflow: hidden;
+  color: #a69fb3;
+  font-size: 0.78rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-poster-message,
+.preview-poster-note {
+  margin: 0;
+  color: #cfc8db;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.preview-poster-note {
+  color: #9d95ac;
+}
+
+.preview-poster-bar {
+  position: relative;
+  width: 100%;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #2e2839;
+}
+
+.preview-poster-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #a78bfa, #f0abfc);
+  transition: width 400ms ease;
+}
+
+.preview-poster-bar.is-indeterminate > span {
+  width: 35%;
+  animation: preview-poster-slide 1.3s ease-in-out infinite;
+}
+
+.preview-poster-meta {
+  color: #a69fb3;
+  font-size: 0.76rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.preview-poster-cancel,
+.preview-copy-badge button {
+  min-height: 32px;
+  border: 1px solid #4a4158;
+  border-radius: 8px;
+  padding: 4px 12px;
+  background: transparent;
+  color: #e9e3f3;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.preview-poster-details {
+  width: 100%;
+  text-align: left;
+}
+
+.preview-poster-details summary {
+  color: #a69fb3;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.preview-poster-details pre {
+  max-height: 140px;
+  overflow: auto;
+  border-radius: 8px;
+  padding: 8px;
+  background: #15121b;
+  color: #d8d0e4;
+  font: 0.7rem/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+.preview-copy-badge {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 10px;
+  left: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: rgb(12 10 16 / 82%);
+  color: #f0ebf7;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+@keyframes preview-poster-slide {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(320%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preview-poster-bar > span {
+    transition: none;
+  }
+
+  .preview-poster-bar.is-indeterminate > span {
+    animation: none;
+  }
+}
+
+/* Give the poster room even when the undecodable video has no size. */
+.video-preview-frame:has(> .preview-poster) {
+  min-height: 360px;
+}

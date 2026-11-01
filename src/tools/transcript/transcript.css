@@ -27,16 +27,6 @@
   background: #09080c;
 }
 
-.transcript-source-video {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: min(60vh, 520px);
-  background: #09080c;
-  object-fit: contain;
-}
-
 .transcript-audio-preview {
   display: grid;
   width: min(100%, 440px);

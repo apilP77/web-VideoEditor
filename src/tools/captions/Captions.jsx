@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDown,
   ChevronLeft,
@@ -18,6 +18,7 @@ import '@fontsource/bebas-neue/400.css'
 import '@fontsource/anton/400.css'
 import '@fontsource/caveat/700.css'
 import Button from '../../shared/components/Button.jsx'
+import PreviewPoster, { PreviewCopyBadge } from '../../shared/components/PreviewPoster.jsx'
 import ProcessingRing from '../../shared/components/ProcessingRing.jsx'
 import ResultCard from '../../shared/components/ResultCard.jsx'
 import ToolLayout from '../../shared/components/ToolLayout.jsx'
@@ -25,12 +26,12 @@ import UploadBox from '../../shared/components/UploadBox.jsx'
 import VideoPreview from '../../shared/components/VideoPreview.jsx'
 import VideoPlayerControls from '../../shared/components/VideoPlayerControls.jsx'
 import { decodeAudio } from '../../shared/media/decodeAudio.js'
-import { createPreviewProxy } from '../../shared/media/createPreviewProxy.js'
 import { getMediaDuration } from '../../shared/media/duration.js'
 import { getVideoFrameRate } from '../../shared/media/frameRate.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import { getPreviewSize } from '../../shared/media/previewProxy.js'
 import { useObjectUrl } from '../../shared/media/useObjectUrl.js'
+import { usePreviewFallback } from '../../shared/media/usePreviewFallback.js'
 import {
   CAPTION_PACES,
   deleteCaption,
@@ -99,10 +100,10 @@ const LANGUAGE_OPTIONS = [
   ['swedish', 'Swedish'],
 ]
 const PROCESSING_STAGES = [
-  { id: 'loading-model', label: 'Loading model', weight: 25 },
-  { id: 'reading-audio', label: 'Reading your audio...', weight: 15 },
-  { id: 'transcribing', label: 'Transcribing', weight: 55 },
-  { id: 'finishing', label: 'Finishing', weight: 5 },
+  { id: 'loading-model', label: 'Preparing the speech model', weight: 25 },
+  { id: 'reading-audio', label: 'Pulling out the audio', weight: 15 },
+  { id: 'transcribing', label: 'Listening for words', weight: 55 },
+  { id: 'finishing', label: 'Arranging captions', weight: 5 },
 ]
 const CAPTION_FLOW_STEPS = [
   { number: 1, label: 'Video' },
@@ -152,8 +153,7 @@ const PREVIEW_CAPTION = {
 }
 const STYLE_STORAGE_KEY = 'web-video-toolkit-caption-style'
 const NUDGE_SECONDS = 0.05
-const PREVIEW_FALLBACK_MESSAGE =
-  "Your browser can't show this video's picture (likely HEVC). Captions can still be created from the audio. To preview and export, try Chrome with hardware HEVC support, or convert the video to H.264 MP4 first."
+
 
 function isVideoFile(file) {
   return file.type.startsWith('video/') ||
@@ -206,22 +206,88 @@ function getLanguageLabel(language) {
 }
 
 function formatProgressDetail(progress, duration) {
+  const length = Number.isFinite(duration) && duration > 0 ? formatDuration(duration) : null
   if (progress?.stage === 'loading-model') {
-    const file = progress.file || 'Preparing model files'
-    const amount =
-      Number.isFinite(progress.loadedBytes) && Number.isFinite(progress.totalBytes)
-        ? `${(progress.loadedBytes / 1048576).toFixed(1)} of ${(progress.totalBytes / 1048576).toFixed(1)} MB`
-        : ''
-    return [file, amount, 'First run only; cached afterwards.'].filter(Boolean).join(' · ')
+    if (Number.isFinite(progress.loadedBytes) && Number.isFinite(progress.totalBytes)) {
+      const loaded = Math.round(progress.loadedBytes / 1048576)
+      const total = Math.round(progress.totalBytes / 1048576)
+      return loaded >= total
+        ? 'Model ready. Starting it up on your device.'
+        : `Downloading ${loaded} of ${total} MB. This happens once; next time it loads instantly.`
+    }
+    return 'Getting the speech model ready on your device.'
   }
   if (progress?.stage === 'reading-audio') {
-    return `${progress.detail || 'Reading your audio...'} · Length ${formatDuration(duration)}`
+    return length
+      ? `Extracting the soundtrack from your ${length} video.`
+      : 'Extracting the soundtrack from your video.'
   }
   if (progress?.stage === 'transcribing') {
-    return `Chunk ${progress.chunk ?? 0} of ${progress.total ?? 0} · ${formatDuration(progress.coveredSeconds ?? 0)} of ${formatDuration(duration)}`
+    const heard = formatDuration(progress.coveredSeconds ?? 0)
+    const total = progress.total ?? 0
+    if (!progress.completedChunks) {
+      return total > 1
+        ? `Listening to part 1 of ${total}. Words appear as each part finishes.`
+        : 'Listening to your video. Words appear when it finishes.'
+    }
+    return length
+      ? `Heard ${heard} of ${length} so far · part ${Math.min(progress.chunk ?? total, total)} of ${total}.`
+      : `Part ${Math.min(progress.chunk ?? total, total)} of ${total}.`
   }
-  if (progress?.stage === 'finishing') return 'Stitching words and arranging captions.'
+  if (progress?.stage === 'finishing') return 'Grouping words into readable captions.'
   return ''
+}
+
+function LiveTranscript({ words }) {
+  const textRef = useRef(null)
+  // Words from earlier parts stay put; only the newly heard batch types in.
+  const [storedSettledCount, setSettledCount] = useState(0)
+  // A retry restarts the transcript with fewer words; treat all as new.
+  const settledCount = words.length < storedSettledCount ? 0 : storedSettledCount
+  const newWordCount = Math.max(0, words.length - settledCount)
+  const stepMs = newWordCount > 0 ? Math.min(45, 1800 / newWordCount) : 0
+
+  useEffect(() => {
+    const element = textRef.current
+    if (element) element.scrollTop = element.scrollHeight
+    const timer = window.setTimeout(
+      () => setSettledCount(words.length),
+      newWordCount * stepMs + 450,
+    )
+    return () => window.clearTimeout(timer)
+  }, [newWordCount, stepMs, words.length])
+
+  return (
+    <div className="captions-live" aria-live="polite">
+      <p className="captions-live-label">
+        <span className="captions-live-dot" aria-hidden="true" />
+        {words.length > 0 ? `Heard so far · ${words.length} words` : 'Heard so far'}
+      </p>
+      {words.length > 0 ? (
+        <p className="captions-live-text" ref={textRef}>
+          {words.map((word, index) => (
+            <span
+              key={`${word.start}-${index}`}
+              className={index >= settledCount ? 'captions-live-word is-new' : 'captions-live-word'}
+              style={
+                index >= settledCount
+                  ? { '--word-delay': `${(index - settledCount) * stepMs}ms` }
+                  : undefined
+              }
+            >
+              {word.word}{' '}
+            </span>
+          ))}
+          <span className="captions-live-caret" aria-hidden="true" />
+        </p>
+      ) : (
+        <div className="captions-live-skeleton" aria-hidden="true">
+          <span />
+          <span />
+        </div>
+      )}
+    </div>
+  )
 }
 
 function CaptionStyleThumbnail({ style, selected, onSelect, disabled, fontsReady }) {
@@ -260,39 +326,23 @@ function Captions({ tool }) {
   const previewFrameRef = useRef(null)
   const editorListRef = useRef(null)
   const abortControllerRef = useRef(null)
-  const previewProxyAbortControllerRef = useRef(null)
   const audioCacheRef = useRef(null)
   const exportAbortControllerRef = useRef(null)
   const progressRef = useRef(null)
   const activeCaptionRef = useRef(-1)
-  const previewProxyRequestedRef = useRef(null)
-  const previewFrameTimerRef = useRef(null)
-  const previewFrameCallbackRef = useRef(null)
-  const previewFrameAvailableRef = useRef(false)
   const [file, setFile] = useState(null)
   const [flowStep, setFlowStep] = useState(1)
-  const sourceUrl = useObjectUrl(file)
-  const [previewProxyFile, setPreviewProxyFile] = useState(null)
-  const previewProxyUrl = useObjectUrl(previewProxyFile)
-  const previewUrl = previewProxyUrl || sourceUrl
+  const audioReadyRef = useRef(null)
+  const preview = usePreviewFallback({
+    file,
+    videoRef,
+    // Audio extraction for captions goes first in the shared FFmpeg queue.
+    waitBeforeFFmpeg: () => audioReadyRef.current ?? Promise.resolve(),
+  })
+  const previewUrl = preview.previewUrl
   const [mediaInfo, setMediaInfo] = useState(null)
   const [previewDimensions, setPreviewDimensions] = useState({ width: 0, height: 0 })
   const [previewMaxWidth, setPreviewMaxWidth] = useState(640)
-  const [previewProxyStatus, setPreviewProxyStatus] = useState('idle')
-  const [previewProxyProgress, setPreviewProxyProgress] = useState(null)
-  const [previewStartedAt, setPreviewStartedAt] = useState(0)
-  const [previewElapsed, setPreviewElapsed] = useState(0)
-  const [previewProxyError, setPreviewProxyError] = useState('')
-  const [previewTechnicalDetails, setPreviewTechnicalDetails] = useState('')
-  const [previewDiagnostics, setPreviewDiagnostics] = useState({
-    errorCode: null,
-    errorMessage: '',
-    canPlayType: '',
-    frameAvailable: null,
-    readyState: 0,
-    videoWidth: 0,
-    networkState: 0,
-  })
   const [frameRate, setFrameRate] = useState(null)
   const [previewFrameVersion, setPreviewFrameVersion] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
@@ -309,6 +359,7 @@ function Captions({ tool }) {
   const [openPanel, setOpenPanel] = useState(null)
   const [status, setStatus] = useState('idle')
   const [progress, setProgress] = useState(null)
+  const [liveWords, setLiveWords] = useState([])
   const [startedAt, setStartedAt] = useState(0)
   const [progressUpdatedAt, setProgressUpdatedAt] = useState(0)
   const [failedStage, setFailedStage] = useState(null)
@@ -338,16 +389,16 @@ function Captions({ tool }) {
   const exportResultUrl = useObjectUrl(exportResultFile)
   const isProcessing = status === 'processing' || exportStatus === 'processing'
   const hasCaptions = captions.length > 0
-  const exportNeedsPreviewProxy = previewDiagnostics.frameAvailable === false
-  const exportWaitingForFrame = previewDiagnostics.frameAvailable !== true &&
-    previewDiagnostics.frameAvailable !== false
-  const exportUsesPreviewProxy =
-    exportNeedsPreviewProxy && Boolean(previewProxyFile)
+  // Export burns captions into the original unless the browser cannot decode
+  // its picture; then it uses the 960px preview copy.
+  const exportNeedsPreviewProxy = preview.frameAvailable === false
+  const exportWaitingForFrame = preview.frameAvailable === null
+  const exportUsesPreviewProxy = exportNeedsPreviewProxy && Boolean(preview.previewFile)
   const previewSize = getPreviewSize(
     previewDimensions.width,
     previewDimensions.height,
     previewMaxWidth,
-    Math.min(520, window.innerHeight * 0.6),
+    Math.min(440, window.innerHeight * 0.5),
   )
   const captionWords = useMemo(() => getCaptionExportWords(captions), [captions])
   const settingsSnapshot = useMemo(
@@ -367,109 +418,6 @@ function Captions({ tool }) {
     () => findCaptionReviewWords(captions, spokenLanguage),
     [captions, spokenLanguage],
   )
-  function clearPreviewFrameWait(video) {
-    window.clearTimeout(previewFrameTimerRef.current)
-    previewFrameTimerRef.current = null
-    if (
-      video &&
-      previewFrameCallbackRef.current !== null &&
-      typeof video.cancelVideoFrameCallback === 'function'
-    ) {
-      video.cancelVideoFrameCallback(previewFrameCallbackRef.current)
-    }
-    previewFrameCallbackRef.current = null
-  }
-
-  const requestPreviewCopy = useCallback(async (
-    sourceFile,
-    width,
-    height,
-    preferFFmpeg = false,
-  ) => {
-    if (!sourceFile || previewProxyRequestedRef.current === sourceFile || previewProxyFile) {
-      return
-    }
-
-    previewProxyRequestedRef.current = sourceFile
-    const controller = new AbortController()
-    previewProxyAbortControllerRef.current = controller
-    const now = getMonotonicTime()
-    setPreviewProxyStatus('processing')
-    setPreviewProxyProgress(null)
-    setPreviewStartedAt(now)
-    setPreviewElapsed(0)
-    setProgressUpdatedAt(now)
-    setPreviewProxyError('')
-    setPreviewTechnicalDetails('')
-
-    try {
-      let sourceWidth = width
-      let sourceHeight = height
-      if (!(sourceWidth > 0 && sourceHeight > 0)) {
-        const info = await getMediaInfo(sourceFile)
-        sourceWidth = info.width
-        sourceHeight = info.height
-      }
-      if (!(sourceWidth > 0 && sourceHeight > 0)) {
-        throw new Error('Video dimensions could not be read.')
-      }
-
-      const output = await createPreviewProxy(sourceFile, {
-        width: sourceWidth,
-        height: sourceHeight,
-        signal: controller.signal,
-        preferFFmpeg,
-        onProgress: (percent) => {
-          if (
-            controller.signal.aborted ||
-            previewProxyAbortControllerRef.current !== controller
-          ) {
-            return
-          }
-          setPreviewProxyProgress(Number.isFinite(percent) ? percent : null)
-          setProgressUpdatedAt(getMonotonicTime())
-        },
-      })
-      if (controller.signal.aborted) return
-
-      clearPreviewFrameWait(videoRef.current)
-      setPreviewProxyFile(
-        new File([output.blob], output.filename, {
-          type: 'video/mp4',
-          lastModified: Date.now(),
-        }),
-      )
-      setPreviewDiagnostics((current) => ({
-        ...current,
-        frameAvailable: null,
-      }))
-      setPreviewProxyStatus('done')
-      setPreviewProxyProgress(100)
-    } catch (proxyError) {
-      const isCurrentRequest = previewProxyAbortControllerRef.current === controller
-      if (proxyError?.name === 'AbortError' || controller.signal.aborted) {
-        if (isCurrentRequest) {
-          previewProxyRequestedRef.current = null
-          setPreviewProxyStatus('idle')
-        }
-        return
-      }
-      if (!isCurrentRequest) return
-      console.error('Could not create a compatible video preview.', proxyError)
-      previewProxyRequestedRef.current = null
-      setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
-      setPreviewTechnicalDetails(
-        proxyError?.technicalDetails ??
-          (proxyError instanceof Error ? proxyError.message : String(proxyError)),
-      )
-      setPreviewProxyStatus('error')
-    } finally {
-      if (previewProxyAbortControllerRef.current === controller) {
-        previewProxyAbortControllerRef.current = null
-      }
-    }
-  }, [previewProxyFile])
-
   useEffect(() => {
     let active = true
     waitForCaptionFonts()
@@ -511,20 +459,7 @@ function Captions({ tool }) {
     abortControllerRef.current?.abort()
     audioCacheRef.current = null
   }, [])
-  useEffect(() => () => previewProxyAbortControllerRef.current?.abort(), [])
   useEffect(() => () => exportAbortControllerRef.current?.abort(), [])
-
-  useEffect(() => () => {
-    window.clearTimeout(previewFrameTimerRef.current)
-    const video = videoRef.current
-    if (
-      video &&
-      previewFrameCallbackRef.current !== null &&
-      typeof video.cancelVideoFrameCallback === 'function'
-    ) {
-      video.cancelVideoFrameCallback(previewFrameCallbackRef.current)
-    }
-  }, [])
 
   useEffect(() => {
     if (exportStatus !== 'processing') return undefined
@@ -533,75 +468,6 @@ function Captions({ tool }) {
     }, 1000)
     return () => window.clearInterval(timer)
   }, [exportStartedAt, exportStatus])
-
-  useEffect(() => {
-    if (previewProxyStatus !== 'processing') return undefined
-    const updateElapsed = () => {
-      setPreviewElapsed(getMonotonicTime() - previewStartedAt)
-    }
-    updateElapsed()
-    const timer = window.setInterval(updateElapsed, 1000)
-    return () => window.clearInterval(timer)
-  }, [previewProxyStatus, previewStartedAt])
-
-  useEffect(() => {
-    if (!file || !previewUrl) return undefined
-
-    const video = videoRef.current
-    previewFrameAvailableRef.current = false
-    window.clearTimeout(previewFrameTimerRef.current)
-
-    previewFrameTimerRef.current = window.setTimeout(() => {
-      if (previewFrameAvailableRef.current) return
-
-      const activeVideo = videoRef.current
-      if (!activeVideo) return
-      const activeFile = previewProxyFile ?? file
-      const details = {
-        readyState: activeVideo.readyState,
-        videoWidth: activeVideo.videoWidth,
-        errorCode: activeVideo.error?.code ?? null,
-        errorMessage: activeVideo.error?.message || '',
-        networkState: activeVideo.networkState,
-        canPlayType: activeFile
-          ? activeVideo.canPlayType(activeFile.type) || 'no'
-          : 'unknown',
-        fileType: activeFile?.type || 'unknown',
-      }
-
-      setPreviewDiagnostics((current) => ({
-        ...current,
-        ...details,
-        frameAvailable: false,
-      }))
-      console.warn('Captions preview did not produce a decoded frame within three seconds.', details)
-
-      if (previewProxyFile) {
-        setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
-        setPreviewTechnicalDetails(JSON.stringify(details, null, 2))
-      } else {
-        void requestPreviewCopy(
-          file,
-          activeVideo.videoWidth,
-          activeVideo.videoHeight,
-          true,
-        )
-      }
-    }, 3000)
-
-    return () => {
-      window.clearTimeout(previewFrameTimerRef.current)
-      previewFrameTimerRef.current = null
-      if (
-        video &&
-        previewFrameCallbackRef.current !== null &&
-        typeof video.cancelVideoFrameCallback === 'function'
-      ) {
-        video.cancelVideoFrameCallback(previewFrameCallbackRef.current)
-      }
-      previewFrameCallbackRef.current = null
-    }
-  }, [file, previewProxyFile, previewUrl, requestPreviewCopy])
 
   useEffect(() => {
     const frame = previewFrameRef.current
@@ -745,192 +611,29 @@ function Captions({ tool }) {
     })
   }, [activeCaptionIndex])
 
-  function isBlackVideoFrame(video) {
-    const canvas = document.createElement('canvas')
-    canvas.width = 32
-    canvas.height = 32
-    const context = canvas.getContext('2d', { willReadFrequently: true })
-    if (!context) return true
-    try {
-      context.drawImage(video, 0, 0, canvas.width, canvas.height)
-      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
-      for (let index = 0; index < pixels.length; index += 4) {
-        if (pixels[index] > 4 || pixels[index + 1] > 4 || pixels[index + 2] > 4) {
-          return false
-        }
-      }
-      return true
-    } catch (error) {
-      console.warn('Could not inspect the decoded preview frame.', error)
-      return true
-    }
-  }
-
-  function markPreviewFrameAvailable(video) {
-    if (isBlackVideoFrame(video)) {
-      previewFrameAvailableRef.current = false
-      const activeFile = previewProxyFile ?? file
-      const canPlayType = activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown'
-      console.warn('Captions preview produced a fully black frame.', {
-        errorCode: video.error?.code ?? null,
-        canPlayType,
-        fileType: activeFile?.type || 'unknown',
-      })
-      const details = {
-        errorCode: video.error?.code ?? null,
-        canPlayType,
-        fileType: activeFile?.type || 'unknown',
-        frame: 'fully black',
-      }
-      setPreviewDiagnostics((current) => ({
-        ...current,
-        errorCode: video.error?.code ?? current.errorCode,
-        errorMessage: video.error?.message || 'The decoded preview frame was fully black.',
-        canPlayType,
-        readyState: video.readyState,
-        videoWidth: video.videoWidth,
-        networkState: video.networkState,
-        frameAvailable: previewProxyFile ? false : null,
-      }))
-      if (previewProxyFile) {
-        setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
-        setPreviewTechnicalDetails(JSON.stringify(details, null, 2))
-      }
-      return false
-    }
-    previewFrameAvailableRef.current = true
-    clearPreviewFrameWait(video)
-    setPreviewDiagnostics((current) => ({
-      ...current,
-      readyState: video.readyState,
-      videoWidth: video.videoWidth,
-      networkState: video.networkState,
-      frameAvailable: true,
-    }))
-    return true
-  }
-
-  function updatePreviewDiagnosticsFromVideo(video) {
-    if (video.currentSrc !== previewUrl) return
-    const activeFile = previewProxyFile ?? file
-    setPreviewDiagnostics((current) => ({
-      ...current,
-      canPlayType: activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown',
-      errorCode: video.error?.code ?? null,
-      errorMessage: video.error?.message || '',
-      readyState: video.readyState,
-      videoWidth: video.videoWidth,
-      networkState: video.networkState,
-    }))
-  }
-
   function handleVideoMetadata(event) {
+    preview.videoHandlers.onLoadedMetadata(event)
     const video = event.currentTarget
     if (video.currentSrc !== previewUrl) return
     const width = video.videoWidth
     const height = video.videoHeight
-    const activeFile = previewProxyFile ?? file
-    const canPlayType = activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown'
-    setPreviewDiagnostics((current) => ({
-      ...current,
-      canPlayType,
-      errorCode: video.error?.code ?? current.errorCode,
-      errorMessage: video.error?.message ?? current.errorMessage,
-      readyState: video.readyState,
-      videoWidth: width,
-      networkState: video.networkState,
-      frameAvailable: previewFrameAvailableRef.current ? true : null,
-    }))
-
     if (width > 0 && height > 0) {
       setPreviewDimensions({ width, height })
-      if (!previewProxyFile) {
-        setMediaInfo((current) => ({
-          ...current,
-          width: current?.width || width,
-          height: current?.height || height,
-          duration: getMediaDuration(video.duration, current?.duration),
-          hasVideo: true,
-        }))
-      } else {
-        setMediaInfo((current) => ({
-          ...current,
-          duration: getMediaDuration(video.duration, current?.duration),
-        }))
-      }
-    }
-
-    const validDuration = getMediaDuration(video.duration, mediaInfo?.duration)
-    if (video.currentTime === 0 && validDuration > 0) {
-      video.currentTime = Math.min(0.01, validDuration / 2)
-    }
-    setPreviewFrameVersion((version) => version + 1)
-
-    if (width > 0 && height > 0 && typeof video.requestVideoFrameCallback === 'function') {
-      if (
-        previewFrameCallbackRef.current !== null &&
-        typeof video.cancelVideoFrameCallback === 'function'
-      ) {
-        video.cancelVideoFrameCallback(previewFrameCallbackRef.current)
-      }
-      previewFrameCallbackRef.current = video.requestVideoFrameCallback(() => {
-        previewFrameCallbackRef.current = null
-        if (video.currentSrc === previewUrl) markPreviewFrameAvailable(video)
-      })
-    }
-  }
-
-  function handleVideoError(event) {
-    const video = event.currentTarget
-    if (video.currentSrc !== previewUrl) return
-    const mediaError = video.error
-    const code = mediaError?.code ?? null
-    const message = mediaError?.message || 'The browser could not decode a video frame.'
-    const activeFile = previewProxyFile ?? file
-    const canPlayType = activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown'
-    const details = {
-      code,
-      message,
-      canPlayType,
-      fileType: activeFile?.type || 'unknown',
-    }
-    console.error('Captions preview video error.', details)
-    setPreviewDiagnostics((current) => ({
-      ...current,
-      errorCode: code,
-      errorMessage: message,
-      canPlayType,
-      readyState: video.readyState,
-      videoWidth: video.videoWidth,
-      networkState: video.networkState,
-      frameAvailable: previewProxyFile ? false : current.frameAvailable,
-    }))
-    if (previewProxyFile) {
-      setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
-      setPreviewTechnicalDetails(JSON.stringify(details, null, 2))
-    }
-  }
-
-  function handlePreviewLoadedData() {
-    const video = videoRef.current
-    if (video?.currentSrc !== previewUrl) return
-    if (video) {
-      const activeFile = previewProxyFile ?? file
-      setPreviewDiagnostics((current) => ({
+      // The preview copy is smaller than the original; keep the source size.
+      setMediaInfo((current) => ({
         ...current,
-        canPlayType: activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown',
-        errorCode: video.error?.code ?? null,
-        errorMessage: video.error?.message || '',
-        readyState: video.readyState,
-        videoWidth: video.videoWidth,
-        networkState: video.networkState,
+        ...(preview.usingProxy
+          ? {}
+          : { width: current?.width || width, height: current?.height || height, hasVideo: true }),
+        duration: getMediaDuration(video.duration, current?.duration),
       }))
     }
-    if (video?.videoWidth > 0 && video?.videoHeight > 0) {
-      if (markPreviewFrameAvailable(video)) {
-        setPreviewFrameVersion((version) => version + 1)
-      }
-    }
+    setPreviewFrameVersion((version) => version + 1)
+  }
+
+  function handlePreviewLoadedData(event) {
+    preview.videoHandlers.onLoadedData(event)
+    setPreviewFrameVersion((version) => version + 1)
   }
 
   function chooseFile(selectedFile) {
@@ -939,30 +642,13 @@ function Captions({ tool }) {
       return
     }
     abortControllerRef.current?.abort()
-    previewProxyAbortControllerRef.current?.abort()
     exportAbortControllerRef.current?.abort()
     const shouldRestore = restoredProject && lastProject?.fileName === selectedFile.name
     setFile(selectedFile)
-    setFlowStep(shouldRestore ? 3 : 1)
+    setFlowStep(shouldRestore ? 3 : 2)
     audioCacheRef.current = null
-    setPreviewProxyFile(null)
     setMediaInfo(null)
     setPreviewDimensions({ width: 0, height: 0 })
-    setPreviewProxyStatus('idle')
-    setPreviewProxyProgress(null)
-    setPreviewProxyError('')
-    setPreviewTechnicalDetails('')
-    setPreviewDiagnostics({
-      errorCode: null,
-      errorMessage: '',
-      canPlayType: '',
-      frameAvailable: null,
-      readyState: 0,
-      videoWidth: 0,
-      networkState: 0,
-    })
-    previewFrameAvailableRef.current = false
-    previewProxyRequestedRef.current = null
     setFrameRate(null)
     setPreviewFrameVersion(0)
     setExportResult(null)
@@ -991,34 +677,20 @@ function Captions({ tool }) {
       setCaptions([])
       setSpokenLanguage(null)
       setRestoredProject(false)
+      // Start captioning straight away; the original video stays in the
+      // preview while it works.
+      void runTranscription(selectedFile, { auto: true })
     }
   }
 
   function startOver() {
     abortControllerRef.current?.abort()
-    previewProxyAbortControllerRef.current?.abort()
     exportAbortControllerRef.current?.abort()
     setFile(null)
     setFlowStep(1)
     audioCacheRef.current = null
-    setPreviewProxyFile(null)
     setMediaInfo(null)
     setPreviewDimensions({ width: 0, height: 0 })
-    setPreviewProxyStatus('idle')
-    setPreviewProxyProgress(null)
-    setPreviewProxyError('')
-    setPreviewTechnicalDetails('')
-    setPreviewDiagnostics({
-      errorCode: null,
-      errorMessage: '',
-      canPlayType: '',
-      frameAvailable: null,
-      readyState: 0,
-      videoWidth: 0,
-      networkState: 0,
-    })
-    previewFrameAvailableRef.current = false
-    previewProxyRequestedRef.current = null
     setFrameRate(null)
     setPreviewFrameVersion(0)
     setCurrentTime(0)
@@ -1054,6 +726,7 @@ function Captions({ tool }) {
   }
 
   function updateProgress(nextProgress) {
+    if (Array.isArray(nextProgress.partialWords)) setLiveWords(nextProgress.partialWords)
     const previousStage = progressRef.current?.stage
     progressRef.current = nextProgress
     setProgress(nextProgress)
@@ -1066,36 +739,30 @@ function Captions({ tool }) {
     }
   }
 
-  function handleVideoMetadata(event) {
-    const video = event.currentTarget
-    const validDuration = getMediaDuration(video.duration, mediaInfo?.duration)
-    setMediaInfo((current) => ({
-      ...current,
-      width: video.videoWidth || current?.width || 0,
-      height: video.videoHeight || current?.height || 0,
-      duration: getMediaDuration(video.duration, current?.duration),
-      hasVideo: true,
-    }))
-    if (video.currentTime === 0 && validDuration > 0) {
-      video.currentTime = Math.min(0.01, validDuration / 2)
-    }
-    setPreviewFrameVersion((version) => version + 1)
-  }
-
   function handleVideoSeeked(event) {
+    preview.videoHandlers.onSeeked(event)
     const video = event.currentTarget
     setCurrentTime(video.currentTime)
     setPreviewFrameVersion((version) => version + 1)
   }
 
-  async function runTranscription() {
-    if (!file || isProcessing) return
+  /**
+   * Transcribes the video into timed words and lays them out as captions.
+   *
+   * @param {File} [sourceFile] File to use; defaults to the selected file.
+   *   Passed explicitly right after upload, before state has updated.
+   * @param {{auto?: boolean}} [options] `auto` runs start on upload and move
+   *   to Style and export when they finish.
+   */
+  async function runTranscription(sourceFile = file, { auto = false } = {}) {
+    if (!(sourceFile instanceof File) || (!auto && isProcessing)) return
     const controller = new AbortController()
     abortControllerRef.current = controller
     const now = getMonotonicTime()
     videoRef.current?.pause()
     setIsPlaying(false)
     setStatus('processing')
+    setLiveWords([])
     setProgress({ stage: 'loading-model', percent: null })
     progressRef.current = { stage: 'loading-model', percent: null }
     setStartedAt(now)
@@ -1103,6 +770,15 @@ function Captions({ tool }) {
     setError('')
     setTechnicalDetails('')
     setFailedStage(null)
+
+    // Extract the audio while the model loads. It is quick, and starting it
+    // first keeps it ahead of any FFmpeg preview copy in the queue.
+    const cached = audioCacheRef.current?.file === sourceFile
+    const audioPromise = cached
+      ? Promise.resolve(audioCacheRef.current.samples)
+      : decodeAudio(sourceFile, { signal: controller.signal })
+    audioReadyRef.current = audioPromise
+    audioPromise.catch(() => {})
 
     try {
       const prepared = await prepareWhisperModel(model, {
@@ -1113,25 +789,9 @@ function Captions({ tool }) {
 
       updateProgress({ stage: 'loading-model', backend: prepared.backend, percent: 100 })
       updateProgress({ stage: 'reading-audio', backend: prepared.backend, percent: null })
-      let audio
-      if (audioCacheRef.current?.file === file) {
-        audio = audioCacheRef.current.samples
-        updateProgress({
-          stage: 'reading-audio',
-          backend: prepared.backend,
-          percent: 100,
-          detail: 'Using audio extracted earlier.',
-        })
-      } else {
-        audio = await decodeAudio(file, {
-          signal: controller.signal,
-          onProgress: updateProgress,
-        })
-        if (!controller.signal.aborted) {
-          audioCacheRef.current = { file, samples: audio }
-        }
-      }
+      const audio = await audioPromise
       if (controller.signal.aborted) return
+      if (!cached) audioCacheRef.current = { file: sourceFile, samples: audio }
       updateProgress({ stage: 'reading-audio', backend: prepared.backend, percent: 100 })
 
       const transcription = await transcribe(audio, {
@@ -1150,7 +810,15 @@ function Captions({ tool }) {
       setSpokenLanguage(transcription.language)
       setRestoredProject(false)
       setStatus('done')
+      if (auto && nextCaptions.length > 0) {
+        // Land on Style and export so pace and style can be tried right away
+        // over the same preview. Respect a step the user picked meanwhile.
+        setFlowStep((current) => (current === 2 ? 3 : current))
+        setOpenPanel((current) => current ?? 'style')
+      }
     } catch (caughtError) {
+      // A newer run (for example after choosing another video) owns the UI.
+      if (abortControllerRef.current !== controller) return
       if (caughtError?.name === 'AbortError' || controller.signal.aborted) {
         setStatus(captions.length > 0 ? 'done' : 'idle')
       } else {
@@ -1165,12 +833,13 @@ function Captions({ tool }) {
       }
     } finally {
       if (abortControllerRef.current === controller) abortControllerRef.current = null
+      if (audioReadyRef.current === audioPromise) audioReadyRef.current = null
     }
   }
 
   async function runCaptionExport() {
     if (!file || captions.length === 0 || isProcessing) return
-    const exportFile = exportUsesPreviewProxy ? previewProxyFile : file
+    const exportFile = exportUsesPreviewProxy ? preview.previewFile : file
     if (!exportFile) return
     const controller = new AbortController()
     exportAbortControllerRef.current = controller
@@ -1325,6 +994,97 @@ function Captions({ tool }) {
   const shouldWarnAboutLongVideo =
     duration > 3 * 60 || (file?.size ?? 0) > 500 * 1024 * 1024
 
+  const transcriptionForm = (
+    <>
+      <p className="captions-model-note">
+        The selected model downloads on its first run and is cached on this device.
+      </p>
+      {spokenLanguage && (
+        <div className="captions-language-row">
+          <p>
+            Spoken language: <strong>{languageLabel}, detected</strong>
+          </p>
+          <button
+            type="button"
+            className="text-button"
+            disabled={isProcessing}
+            onClick={() => setShowLanguagePicker((visible) => !visible)}
+          >
+            Change
+          </button>
+        </div>
+      )}
+      {(!spokenLanguage || showLanguagePicker) && (
+        <label className="captions-field" htmlFor="captions-language">
+          Language
+          <select
+            id="captions-language"
+            value={language}
+            disabled={isProcessing}
+            onChange={(event) => setLanguage(event.target.value)}
+          >
+            {LANGUAGE_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label className="captions-field" htmlFor="captions-model">
+        Model
+        <select
+          id="captions-model"
+          value={model}
+          disabled={isProcessing}
+          onChange={(event) => setModel(event.target.value)}
+        >
+          {MODEL_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+      {shouldWarnAboutLongVideo && (
+        <p className="captions-warning" role="status">
+          Long videos can be slow and use a lot of memory. Close other tabs.
+        </p>
+      )}
+      {status === 'error' && (
+        <div className="captions-error" role="alert">
+          <p className="tool-error">{error}</p>
+          {technicalDetails && (
+            <details>
+              <summary>Details</summary>
+              <pre>{technicalDetails}</pre>
+            </details>
+          )}
+        </div>
+      )}
+      <Button
+        variant={captions.length > 0 ? 'outline' : 'primary'}
+        className="captions-transcribe-button"
+        disabled={isProcessing}
+        onClick={() => runTranscription()}
+      >
+        {actionLabel}
+      </Button>
+        {status === 'error' && (
+          <ProcessingRing
+            stages={PROCESSING_STAGES}
+            stageId={stageId}
+            percent={progress?.percent ?? null}
+            startedAt={startedAt}
+            progressUpdatedAt={progressUpdatedAt}
+            detail={progressDetail}
+            failedStage={failedStage}
+            onCancel={
+              status === 'processing'
+                ? () => abortControllerRef.current?.abort()
+                : undefined
+            }
+          />
+        )}
+    </>
+  )
+
   return (
     <ToolLayout
       tool={tool}
@@ -1426,20 +1186,11 @@ function Captions({ tool }) {
                       videoProps={{
                         playsInline: true,
                         preload: 'metadata',
-                        onLoadStart: (event) =>
-                          updatePreviewDiagnosticsFromVideo(event.currentTarget),
                         onLoadedMetadata: handleVideoMetadata,
                         onLoadedData: handlePreviewLoadedData,
-                        onCanPlay: (event) =>
-                          updatePreviewDiagnosticsFromVideo(event.currentTarget),
-                        onWaiting: (event) =>
-                          updatePreviewDiagnosticsFromVideo(event.currentTarget),
-                        onStalled: (event) =>
-                          updatePreviewDiagnosticsFromVideo(event.currentTarget),
                         onSeeked: handleVideoSeeked,
                         onTimeUpdate: (event) => {
                           const video = event.currentTarget
-                          updatePreviewDiagnosticsFromVideo(video)
                           const time = video.currentTime
                           setCurrentTime(time)
                           const nextIndex = getActiveCaption(captions, time)
@@ -1448,7 +1199,7 @@ function Captions({ tool }) {
                         },
                         onPlay: () => setIsPlaying(true),
                         onPause: () => setIsPlaying(false),
-                        onError: handleVideoError,
+                        onError: preview.videoHandlers.onError,
                       }}
                     >
                       {fontsReady && (
@@ -1458,23 +1209,40 @@ function Captions({ tool }) {
                           aria-hidden="true"
                         />
                       )}
-                      {previewProxyStatus === 'processing' && (
-                        <div className="captions-preview-badge" role="status">
-                          <span>
-                            Making a preview copy, first time only for large files
-                            {previewProxyProgress !== null
-                              ? ` · ${Math.round(previewProxyProgress)}%`
-                              : ''}
-                            {' · '}
-                            {formatElapsed(previewElapsed)}
+                      {status === 'processing' && (
+                        <div className="captions-listening-badge" aria-hidden="true">
+                          <span className="captions-listening-bars">
+                            <span />
+                            <span />
+                            <span />
+                            <span />
                           </span>
-                          <button
-                            type="button"
-                            onClick={() => previewProxyAbortControllerRef.current?.abort()}
-                          >
-                            Cancel
-                          </button>
+                          {progress?.stage === 'transcribing'
+                            ? 'Listening'
+                            : progress?.stage === 'finishing'
+                              ? 'Almost done'
+                              : 'Getting ready'}
                         </div>
+                      )}
+                      {preview.showPoster && (
+                        <PreviewPoster
+                          fileName={file.name}
+                          codec={preview.sourceInfo?.codec ?? mediaInfo?.codec}
+                          status={preview.status}
+                          progress={preview.progress}
+                          startedAt={preview.conversionStartedAt}
+                          progressUpdatedAt={preview.progressUpdatedAt}
+                          message={preview.message}
+                          technicalDetails={preview.technicalDetails}
+                          note="Captions are made from the audio, so they keep working while the picture is unavailable."
+                          onCancel={preview.cancelConversion}
+                        />
+                      )}
+                      {!preview.showPoster && preview.status === 'converting' && (
+                        <PreviewCopyBadge
+                          progress={preview.progress}
+                          onCancel={preview.cancelConversion}
+                        />
                       )}
                     </VideoPreview>
                   </div>
@@ -1483,69 +1251,6 @@ function Captions({ tool }) {
                       Preparing caption fonts…
                     </p>
                   )}
-                  {previewProxyError && (
-                    <p className="captions-preview-error" role="status">
-                      {previewProxyError}
-                    </p>
-                  )}
-                  <details className="captions-preview-details">
-                    <summary>Preview details</summary>
-                    <dl>
-                      <div>
-                        <dt>Source resolution</dt>
-                        <dd>
-                          {mediaInfo?.width && mediaInfo?.height
-                            ? `${mediaInfo.width} × ${mediaInfo.height}`
-                            : previewDimensions.width && previewDimensions.height
-                              ? `${previewDimensions.width} × ${previewDimensions.height}`
-                              : 'Unavailable'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Video codec</dt>
-                        <dd>{mediaInfo?.codec || 'Unavailable'}</dd>
-                      </div>
-                      <div>
-                        <dt>Video error code</dt>
-                        <dd>{previewDiagnostics.errorCode ?? 'None'}</dd>
-                      </div>
-                      <div>
-                        <dt>Video error</dt>
-                        <dd>{previewDiagnostics.errorMessage || 'None'}</dd>
-                      </div>
-                      <div>
-                        <dt>canPlayType</dt>
-                        <dd>{previewDiagnostics.canPlayType || 'Not checked'}</dd>
-                      </div>
-                      <div>
-                        <dt>readyState</dt>
-                        <dd>{previewDiagnostics.readyState}</dd>
-                      </div>
-                      <div>
-                        <dt>videoWidth</dt>
-                        <dd>{previewDiagnostics.videoWidth}</dd>
-                      </div>
-                      <div>
-                        <dt>networkState</dt>
-                        <dd>{previewDiagnostics.networkState}</dd>
-                      </div>
-                      <div>
-                        <dt>First frame</dt>
-                        <dd>
-                          {previewDiagnostics.frameAvailable === null
-                            ? 'Waiting'
-                            : previewDiagnostics.frameAvailable
-                              ? 'Available'
-                              : 'Unavailable'}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Preview copy</dt>
-                        <dd>{previewProxyStatus === 'done' ? 'Ready' : previewProxyStatus}</dd>
-                      </div>
-                    </dl>
-                    {previewTechnicalDetails && <pre>{previewTechnicalDetails}</pre>}
-                  </details>
                   <VideoPlayerControls
                     currentTime={currentTime}
                     duration={duration}
@@ -1555,147 +1260,6 @@ function Captions({ tool }) {
                     onSeek={seekVideo}
                   />
                 </section>
-
-                {flowStep === 2 && (
-                <section
-                  className="tool-panel captions-editor-panel"
-                  aria-labelledby="caption-list-heading"
-                >
-                  <div className="panel-heading">
-                    <div>
-                      <h2 id="caption-list-heading">Caption editor</h2>
-                      <p>
-                        {spokenLanguage
-                          ? `Spoken language: ${languageLabel}, detected`
-                          : 'Edit wording and timing while keeping each caption in sync.'}
-                      </p>
-                    </div>
-                    <span className="captions-count">{captions.length} total</span>
-                  </div>
-                  {captions.length === 0 ? (
-                    <p className="captions-empty">
-                      Create captions to see each timed line here.
-                    </p>
-                  ) : (
-                    <ol className="captions-list" ref={editorListRef}>
-                      {captions.map((caption, index) => {
-                        const active = index === activeCaptionIndex
-                        const activeWordIndex = active
-                          ? getActiveWordIndex(caption, currentTime)
-                          : -1
-                        return (
-                          <li
-                            key={`${caption.start}-${index}`}
-                            className={`caption-row${active ? ' is-active' : ''}`}
-                            data-active={active ? 'true' : 'false'}
-                            onClick={(event) => {
-                              if (
-                                !isProcessing &&
-                                !event.target.closest('button, textarea')
-                              ) {
-                                seekVideo(caption.start)
-                              }
-                            }}
-                          >
-                            <div className="caption-row-top">
-                              <button
-                                type="button"
-                                className="caption-time-button"
-                                disabled={isProcessing}
-                                onClick={() => seekVideo(caption.start)}
-                                aria-label={`Seek to caption ${index + 1} at ${formatTime(caption.start)}`}
-                              >
-                                {formatTime(caption.start)}
-                              </button>
-                              <div className="caption-row-actions">
-                                <span className="caption-nudge-group" aria-label="Adjust caption start">
-                                  <button type="button" aria-label="Move start earlier by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionStart(item, -NUDGE_SECONDS))}><ChevronLeft size={15} /></button>
-                                  <button type="button" aria-label="Move start later by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionStart(item, NUDGE_SECONDS))}><ChevronRight size={15} /></button>
-                                </span>
-                                <span className="caption-nudge-group" aria-label="Adjust caption end">
-                                  <button type="button" aria-label="Move end earlier by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionEnd(item, -NUDGE_SECONDS))}><ChevronLeft size={15} /></button>
-                                  <button type="button" aria-label="Move end later by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionEnd(item, NUDGE_SECONDS))}><ChevronRight size={15} /></button>
-                                </span>
-                                <button
-                                  type="button"
-                                  className="caption-icon-button"
-                                  aria-label={`Split caption ${index + 1}`}
-                                  title="Split caption"
-                                  disabled={isProcessing || caption.words.length < 2}
-                                  onClick={() => handleSplit(index)}
-                                >
-                                  <Scissors size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="caption-icon-button"
-                                  aria-label={`Merge caption ${index + 1} with the next`}
-                                  title="Merge with next"
-                                  disabled={isProcessing || index === captions.length - 1}
-                                  onClick={() => handleMerge(index)}
-                                >
-                                  <Merge size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="caption-icon-button is-delete"
-                                  aria-label={`Delete caption ${index + 1}`}
-                                  title="Delete caption"
-                                  disabled={isProcessing}
-                                  onClick={() => setCaptions((current) => deleteCaption(current, index))}
-                                >
-                                  <Trash2 size={15} />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="caption-row-text">
-                              <textarea
-                                value={caption.text}
-                                rows={Math.min(3, Math.max(1, Math.ceil(caption.text.length / 48)))}
-                                aria-label={`Edit caption ${index + 1}`}
-                                disabled={isProcessing}
-                                onChange={(event) =>
-                                  updateCaption(index, (item) =>
-                                    editCaptionText(item, event.target.value),
-                                  )
-                                }
-                              />
-                              {caption.words.map((word, wordIndex) => {
-                                const review = reviewWords.get(
-                                  `${word.start}:${word.end}:${word.word}`,
-                                )
-                                return review ? (
-                                  <span
-                                    key={`${word.start}-${wordIndex}`}
-                                    className="caption-review-marker"
-                                    title={review}
-                                  >
-                                    Check “{word.word}”
-                                  </span>
-                                ) : null
-                              })}
-                            </div>
-                            {active && activeWordIndex >= 0 && (
-                              <span className="caption-current-word" aria-live="polite">
-                                Playing word {activeWordIndex + 1} of {caption.words.length}
-                              </span>
-                            )}
-                          </li>
-                        )
-                      })}
-                    </ol>
-                  )}
-                  {captions.length > 0 && (
-                    <Button
-                      className="captions-next-step"
-                      disabled={isProcessing}
-                      onClick={() => setFlowStep(3)}
-                    >
-                      Looks good, style them
-                    </Button>
-                  )}
-                </section>
-                )}
               </div>
 
               <div className="editor-controls">
@@ -1946,94 +1510,179 @@ function Captions({ tool }) {
                 </>
                 )}
 
+                {flowStep === 2 && hasCaptions && (
+                <section
+                  className="tool-panel captions-editor-panel"
+                  aria-labelledby="caption-list-heading"
+                >
+                  <div className="panel-heading">
+                    <div>
+                      <h2 id="caption-list-heading">Caption editor</h2>
+                      <p>
+                        {spokenLanguage
+                          ? `Spoken language: ${languageLabel}, detected`
+                          : 'Edit wording and timing while keeping each caption in sync.'}
+                      </p>
+                    </div>
+                    <span className="captions-count">{captions.length} total</span>
+                  </div>
+                  <ol className="captions-list" ref={editorListRef}>
+                    {captions.map((caption, index) => {
+                      const active = index === activeCaptionIndex
+                      const activeWordIndex = active
+                        ? getActiveWordIndex(caption, currentTime)
+                        : -1
+                      return (
+                        <li
+                          key={`${caption.start}-${index}`}
+                          className={`caption-row${active ? ' is-active' : ''}`}
+                          data-active={active ? 'true' : 'false'}
+                          onClick={(event) => {
+                            if (
+                              !isProcessing &&
+                              !event.target.closest('button, textarea')
+                            ) {
+                              seekVideo(caption.start)
+                            }
+                          }}
+                        >
+                          <div className="caption-row-top">
+                            <button
+                              type="button"
+                              className="caption-time-button"
+                              disabled={isProcessing}
+                              onClick={() => seekVideo(caption.start)}
+                              aria-label={`Seek to caption ${index + 1} at ${formatTime(caption.start)}`}
+                            >
+                              {formatTime(caption.start)}
+                            </button>
+                            <div className="caption-row-actions">
+                              <span className="caption-nudge-group" aria-label="Adjust caption start">
+                                <button type="button" aria-label="Move start earlier by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionStart(item, -NUDGE_SECONDS))}><ChevronLeft size={15} /></button>
+                                <button type="button" aria-label="Move start later by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionStart(item, NUDGE_SECONDS))}><ChevronRight size={15} /></button>
+                              </span>
+                              <span className="caption-nudge-group" aria-label="Adjust caption end">
+                                <button type="button" aria-label="Move end earlier by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionEnd(item, -NUDGE_SECONDS))}><ChevronLeft size={15} /></button>
+                                <button type="button" aria-label="Move end later by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionEnd(item, NUDGE_SECONDS))}><ChevronRight size={15} /></button>
+                              </span>
+                              <button
+                                type="button"
+                                className="caption-icon-button"
+                                aria-label={`Split caption ${index + 1}`}
+                                title="Split caption"
+                                disabled={isProcessing || caption.words.length < 2}
+                                onClick={() => handleSplit(index)}
+                              >
+                                <Scissors size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                className="caption-icon-button"
+                                aria-label={`Merge caption ${index + 1} with the next`}
+                                title="Merge with next"
+                                disabled={isProcessing || index === captions.length - 1}
+                                onClick={() => handleMerge(index)}
+                              >
+                                <Merge size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                className="caption-icon-button is-delete"
+                                aria-label={`Delete caption ${index + 1}`}
+                                title="Delete caption"
+                                disabled={isProcessing}
+                                onClick={() => setCaptions((current) => deleteCaption(current, index))}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="caption-row-text">
+                            <textarea
+                              value={caption.text}
+                              rows={Math.min(3, Math.max(1, Math.ceil(caption.text.length / 48)))}
+                              aria-label={`Edit caption ${index + 1}`}
+                              disabled={isProcessing}
+                              onChange={(event) =>
+                                updateCaption(index, (item) =>
+                                  editCaptionText(item, event.target.value),
+                                )
+                              }
+                            />
+                            {caption.words.map((word, wordIndex) => {
+                              const review = reviewWords.get(
+                                `${word.start}:${word.end}:${word.word}`,
+                              )
+                              return review ? (
+                                <span
+                                  key={`${word.start}-${wordIndex}`}
+                                  className="caption-review-marker"
+                                  title={review}
+                                >
+                                  Check “{word.word}”
+                                </span>
+                              ) : null
+                            })}
+                          </div>
+                          {active && activeWordIndex >= 0 && (
+                            <span className="caption-current-word" aria-live="polite">
+                              Playing word {activeWordIndex + 1} of {caption.words.length}
+                            </span>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ol>
+                  {captions.length > 0 && (
+                    <Button
+                      className="captions-next-step"
+                      disabled={isProcessing}
+                      onClick={() => setFlowStep(3)}
+                    >
+                      Looks good, style them
+                    </Button>
+                  )}
+                </section>
+                )}
                 {flowStep === 2 && (
                 <section className="tool-panel captions-transcription-panel" aria-label="Speech to captions">
-                  <h2>Speech to captions</h2>
-                  <p className="captions-model-note">
-                    The selected model downloads on its first run and is cached on this device.
-                  </p>
-                  {spokenLanguage && (
-                    <div className="captions-language-row">
-                      <p>
-                        Spoken language: <strong>{languageLabel}, detected</strong>
-                      </p>
-                      <button
-                        type="button"
-                        className="text-button"
-                        disabled={isProcessing}
-                        onClick={() => setShowLanguagePicker((visible) => !visible)}
-                      >
-                        Change
-                      </button>
+                  {status === 'processing' ? (
+                    <div className="captions-working">
+                      <div className="captions-working-heading">
+                        <h2>Creating your captions</h2>
+                        <p>
+                          {MODEL_OPTIONS.find((option) => option.value === model)?.label.split(' · ')[0]} model
+                          {' · '}
+                          {language === 'auto' ? 'Auto-detect language' : getLanguageLabel(language)}
+                          . Keep watching the preview while it works.
+                        </p>
+                      </div>
+                      <ProcessingRing
+                        stages={PROCESSING_STAGES}
+                        stageId={stageId}
+                        percent={progress?.percent ?? null}
+                        startedAt={startedAt}
+                        progressUpdatedAt={progressUpdatedAt}
+                        detail={progressDetail}
+                        failedStage={failedStage}
+                        onCancel={
+                          status === 'processing'
+                            ? () => abortControllerRef.current?.abort()
+                            : undefined
+                        }
+                      />
+                      <LiveTranscript words={liveWords} />
                     </div>
-                  )}
-                  {(!spokenLanguage || showLanguagePicker) && (
-                    <label className="captions-field" htmlFor="captions-language">
-                      Language
-                      <select
-                        id="captions-language"
-                        value={language}
-                        disabled={isProcessing}
-                        onChange={(event) => setLanguage(event.target.value)}
-                      >
-                        {LANGUAGE_OPTIONS.map(([value, label]) => (
-                          <option key={value} value={value}>{label}</option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  <label className="captions-field" htmlFor="captions-model">
-                    Model
-                    <select
-                      id="captions-model"
-                      value={model}
-                      disabled={isProcessing}
-                      onChange={(event) => setModel(event.target.value)}
-                    >
-                      {MODEL_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  {shouldWarnAboutLongVideo && (
-                    <p className="captions-warning" role="status">
-                      Long videos can be slow and use a lot of memory. Close other tabs.
-                    </p>
-                  )}
-                  {status === 'error' && (
-                    <div className="captions-error" role="alert">
-                      <p className="tool-error">{error}</p>
-                      {technicalDetails && (
-                        <details>
-                          <summary>Details</summary>
-                          <pre>{technicalDetails}</pre>
-                        </details>
-                      )}
-                    </div>
-                  )}
-                  <Button
-                    variant={captions.length > 0 ? 'outline' : 'primary'}
-                    className="captions-transcribe-button"
-                    disabled={isProcessing}
-                    onClick={runTranscription}
-                  >
-                    {actionLabel}
-                  </Button>
-                  {(status === 'processing' || status === 'error') && (
-                    <ProcessingRing
-                      stages={PROCESSING_STAGES}
-                      stageId={stageId}
-                      percent={progress?.percent ?? null}
-                      startedAt={startedAt}
-                      progressUpdatedAt={progressUpdatedAt}
-                      detail={progressDetail}
-                      failedStage={failedStage}
-                      onCancel={
-                        status === 'processing'
-                          ? () => abortControllerRef.current?.abort()
-                          : undefined
-                      }
-                    />
+                  ) : hasCaptions && status !== 'error' ? (
+                    <details className="captions-redo">
+                      <summary>Change language or model and redo</summary>
+                      {transcriptionForm}
+                    </details>
+                  ) : (
+                    <>
+                      <h2>Speech to captions</h2>
+                      {transcriptionForm}
+                    </>
                   )}
                 </section>
                 )}
@@ -2042,6 +1691,13 @@ function Captions({ tool }) {
                   {exportUsesPreviewProxy && (
                     <p className="captions-warning" role="status">
                       The browser cannot decode the original picture. Export will use the preview copy at 960 px long edge.
+                    </p>
+                  )}
+                  {exportNeedsPreviewProxy && !preview.previewFile && (
+                    <p className="captions-warning" role="status">
+                      {preview.status === 'converting'
+                        ? 'This browser cannot decode the original picture, so export uses the preview copy. Export unlocks when the copy shown on the preview is ready.'
+                        : 'This browser cannot decode the original picture and no preview copy could be made, so the video cannot be exported here. Convert it to a 1080p H.264 MP4 and try again.'}
                     </p>
                   )}
                   {captions.length > 0 && (
@@ -2069,7 +1725,7 @@ function Captions({ tool }) {
                             isProcessing ||
                             !fontsReady ||
                             exportWaitingForFrame ||
-                            (exportNeedsPreviewProxy && !previewProxyFile)
+                            (exportNeedsPreviewProxy && !preview.previewFile)
                           }
                           onClick={runCaptionExport}
                         >

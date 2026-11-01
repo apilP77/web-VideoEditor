@@ -111,6 +111,24 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Organize Captions as Video, Words, and Style and export steps
 - [x] Extract audio with FFmpeg independently of the video picture and cache samples for retries
 - [x] Keep the source video visible while checking frames and building an optional preview copy
+- [x] Start captioning on upload and show the words as they are heard (confirmed in the browser on 1080p H.264)
+- [x] Put the caption editor beside a height-capped preview (confirmed in the browser on 1080p H.264)
+
+## HEVC, 4K and broken-tool fixes (branch `fix/tools-hevc-4k`)
+- [x] Stop Vite from reloading the page mid-session by pre-bundling worker dependencies (confirmed: Transcript and Captions finish on 1080p)
+- [x] Fix Whisper word timestamps, silent decoded audio, and the model-loading progress crash (unit tests; confirmed in Transcript and Captions on 1080p H.264)
+- [x] Fall back to the file's own size and duration when the browser cannot decode the picture (unit tests)
+- [ ] Shared preview fallback hook and poster card in all four tools (built; not yet seen in a browser)
+- [x] Pause a running preview copy for audio extraction, exports, and metadata reads (unit tests for the rule)
+- [x] Recognise out-of-memory failures and show a specific message (unit tests)
+- [x] Crop exports use the original's pixels while a preview copy plays (unit tests)
+- [ ] Verify Speed on 1080p H.264: preview, export, output size and duration
+- [ ] Verify Crop and trim on 1080p H.264: preview, crop, trim, export, output size and duration
+- [ ] Verify Captions on the 4K HEVC portrait file: poster, preview copy, captions, export at 960 px
+- [ ] Verify Transcript on the 4K HEVC portrait file: poster, preview copy, transcript completes
+- [ ] Verify Speed on the 4K HEVC portrait file: poster, export at full size
+- [ ] Verify Crop and trim on the 4K HEVC portrait file: poster, crop on the copy, export at full size
+- [ ] Check memory use of 4K HEVC preview copies and exports on a typical laptop
 
 ## Phase 9: Shared batch system
 - [ ] Build one reusable batch runner that every tool can plug into

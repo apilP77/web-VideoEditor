@@ -8,6 +8,7 @@ import {
   buildTrimArgs,
   buildTrimCropArgs,
 } from './commands.js'
+import { debugLog } from '../utils/debugLog.js'
 
 const coreBaseUrl = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm'
 
@@ -33,6 +34,7 @@ async function getFFmpeg(requestId) {
     if (ffmpegInstance?.loaded) {
       return ffmpegInstance
     }
+    debugLog('ffmpeg', `#${requestId} loading FFmpeg core from ${coreBaseUrl}`)
 
     if (!ffmpegLoadPromise) {
       const instance = new FFmpeg()
@@ -195,8 +197,13 @@ async function processJobInner(job) {
 
   try {
     console.info(`[${job.requestId}] Engine: Compatible mode (FFmpeg).`)
+    debugLog('ffmpeg', `#${job.requestId} start ${job.type}`, {
+      file: job.fileName,
+      inputMB: Number((job.fileData?.byteLength / 1048576).toFixed(1)),
+    })
     ffmpeg = await getFFmpeg(job.requestId)
     activeFFmpeg = ffmpeg
+    debugLog('ffmpeg', `#${job.requestId} core ready`)
     if (controller.signal.aborted) throw createAbortError()
 
     const inputExtension = getInputExtension(job.fileName)
@@ -244,14 +251,27 @@ async function processJobInner(job) {
       outputMayExist = true
       const processingTimer = `FFmpeg processing #${job.requestId}`
       console.time(processingTimer)
+      // Keep FFmpeg's last log lines so a failure explains itself.
+      const recentLog = []
+      logHandler = ({ message }) => {
+        recentLog.push(message)
+        if (recentLog.length > 15) recentLog.shift()
+      }
+      ffmpeg.on('log', logHandler)
+      debugLog('ffmpeg', `#${job.requestId} exec`, args.join(' '))
       let exitCode
       try {
         exitCode = await ffmpeg.exec(args, -1, { signal: controller.signal })
       } finally {
         console.timeEnd(processingTimer)
+        ffmpeg.off('log', logHandler)
+        logHandler = null
       }
+      debugLog('ffmpeg', `#${job.requestId} exit code ${exitCode}`)
       if (exitCode !== 0) {
-        throw new Error('FFmpeg could not process this file. Check that the format is supported.')
+        throw new Error(
+          `FFmpeg could not process this file (exit code ${exitCode}). Check that the format is supported.\n\nFFmpeg log:\n${recentLog.join('\n')}`,
+        )
       }
 
       const output = await ffmpeg.readFile(outputPath, undefined, {

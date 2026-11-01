@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { changeSpeed } from '../../shared/ffmpeg/ffmpegClient.js'
 import Button from '../../shared/components/Button.jsx'
+import PreviewPoster from '../../shared/components/PreviewPoster.jsx'
 import ProcessingRing from '../../shared/components/ProcessingRing.jsx'
 import ResultCard from '../../shared/components/ResultCard.jsx'
 import ToolLayout from '../../shared/components/ToolLayout.jsx'
@@ -12,7 +13,8 @@ import { isVideoFile } from '../../shared/utils/mediaFiles.js'
 import { getMonotonicTime } from '../../shared/utils/timing.js'
 import { calculateNewDuration } from '../../shared/media/speed.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
-import { useObjectUrl } from '../../shared/media/useObjectUrl.js'
+import { resolveVideoMetadata } from '../../shared/media/videoMetadata.js'
+import { usePreviewFallback } from '../../shared/media/usePreviewFallback.js'
 import './speed.css'
 
 const SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
@@ -38,9 +40,12 @@ function formatSpeed(speed) {
  */
 function Speed({ tool }) {
   const videoRef = useRef(null)
+  const videoFailedRef = useRef(false)
   const abortControllerRef = useRef(null)
   const [file, setFile] = useState(null)
-  const sourceUrl = useObjectUrl(file)
+  // A 960px copy is made only when the browser cannot show the picture;
+  // export always uses the original file.
+  const preview = usePreviewFallback({ file, videoRef, proxyLargeSources: false })
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 })
   const [mediaInfo, setMediaInfo] = useState(UNKNOWN_MEDIA_INFO)
   const [duration, setDuration] = useState(0)
@@ -73,7 +78,9 @@ function Speed({ tool }) {
     setMediaInfo(UNKNOWN_MEDIA_INFO)
     if (file) {
       getMediaInfo(file).then((info) => {
-        if (active) setMediaInfo(info)
+        if (!active) return
+        setMediaInfo(info)
+        applyMetadata(info)
       })
     }
 
@@ -88,7 +95,7 @@ function Speed({ tool }) {
 
     video.playbackRate = speed
     video.preservesPitch = keepAudioPitchNatural
-  }, [keepAudioPitchNatural, speed, sourceUrl])
+  }, [keepAudioPitchNatural, speed, preview.previewUrl])
 
   const resultSettingsChanged = Boolean(
     result?.settings &&
@@ -118,29 +125,44 @@ function Speed({ tool }) {
     setStatus('idle')
     setError('')
     setMetadataError('')
+    videoFailedRef.current = false
     setSaved(false)
   }
 
-  function handleMetadata() {
+  /**
+   * Sets size and duration from the video element, falling back to the
+   * file's own metadata when the browser cannot decode the picture.
+   */
+  function applyMetadata(info) {
     const video = videoRef.current
-    if (!video) return
-    if (
-      !Number.isFinite(video.duration) ||
-      video.duration <= 0 ||
-      video.videoWidth < 2 ||
-      video.videoHeight < 2
-    ) {
-      setMetadataError('This video has invalid dimensions or duration.')
+    const videoLoaded = Boolean(video && video.readyState >= 1 && !videoFailedRef.current)
+    const resolved = resolveVideoMetadata(videoLoaded ? video : null, info)
+    if (resolved.valid) {
+      setVideoSize({ width: resolved.width, height: resolved.height })
+      setDuration(resolved.duration)
+      setMetadataError('')
       return
     }
-
-    setVideoSize({ width: video.videoWidth, height: video.videoHeight })
-    setDuration(video.duration)
-    setMetadataError('')
+    // Only give up once both the browser and the file reader have answered.
+    if (info !== UNKNOWN_MEDIA_INFO && (videoLoaded || videoFailedRef.current)) {
+      setMetadataError(
+        "We couldn't read this video's size or length. Try another file or convert it to MP4.",
+      )
+    }
   }
 
-  function handlePreviewError() {
-    setMetadataError('Could not read this video. Try a supported video file.')
+  function handleMetadata(event) {
+    preview.videoHandlers.onLoadedMetadata(event)
+    // The preview copy is smaller; size and length come from the original.
+    if (event.currentTarget.currentSrc !== preview.sourceUrl) return
+    applyMetadata(mediaInfo)
+  }
+
+  function handlePreviewError(event) {
+    preview.videoHandlers.onError(event)
+    if (event.currentTarget.currentSrc !== preview.sourceUrl) return
+    videoFailedRef.current = true
+    applyMetadata(mediaInfo)
   }
 
   async function togglePlayback() {
@@ -181,6 +203,8 @@ function Speed({ tool }) {
   async function exportVideo() {
     if (!file || !hasMetadata || speed === 1) return
 
+    // A running preview copy is paused by the FFmpeg client and resumes
+    // after the export, so the export never waits behind it.
     const controller = new AbortController()
     abortControllerRef.current = controller
     const startedAt = getMonotonicTime()
@@ -293,11 +317,13 @@ function Speed({ tool }) {
 
                   <VideoPreview
                     videoRef={videoRef}
-                    src={sourceUrl}
+                    src={preview.previewUrl}
                     videoProps={{
                       playsInline: true,
                       preload: 'metadata',
                       onLoadedMetadata: handleMetadata,
+                      onLoadedData: preview.videoHandlers.onLoadedData,
+                      onSeeked: preview.videoHandlers.onSeeked,
                       onError: handlePreviewError,
                       onTimeUpdate: () => {
                         if (videoRef.current) {
@@ -312,7 +338,22 @@ function Speed({ tool }) {
                         ? `${videoSize.width} / ${videoSize.height}`
                         : '16 / 9',
                     }}
-                  />
+                  >
+                    {preview.showPoster && (
+                      <PreviewPoster
+                        fileName={file.name}
+                        codec={preview.sourceInfo?.codec}
+                        status={preview.status}
+                        progress={preview.progress}
+                        startedAt={preview.conversionStartedAt}
+                        progressUpdatedAt={preview.progressUpdatedAt}
+                        message={preview.message}
+                        technicalDetails={preview.technicalDetails}
+                        note="You can still change the speed and export. The original file is used."
+                        onCancel={preview.cancelConversion}
+                      />
+                    )}
+                  </VideoPreview>
 
                   <VideoPlayerControls
                     currentTime={currentTime}

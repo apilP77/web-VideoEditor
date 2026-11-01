@@ -80,3 +80,37 @@ describe('caption timing helpers', () => {
     expect(flagged.get('0:0.3:damn')).toBe('Potentially profane')
   })
 })
+
+describe('layoutCaptions balancing', () => {
+  const sentence = (text, start = 0) =>
+    text.split(' ').map((word, index) => ({
+      word,
+      start: start + index * 0.3,
+      end: start + index * 0.3 + 0.25,
+    }))
+
+  it('splits a long phrase into even captions instead of stranding a word', () => {
+    expect(
+      layoutCaptions(sentence('Does she ever wake you up?'), 5).map((c) => c.text),
+    ).toEqual(['Does she ever', 'wake you up?'])
+    expect(
+      layoutCaptions(sentence('She says good morning sleepy head.'), 5).map((c) => c.text),
+    ).toEqual(['She says good', 'morning sleepy head.'])
+  })
+
+  it('keeps phrases that fit within the pace as one caption', () => {
+    expect(layoutCaptions(sentence('I did not know.'), 5).map((c) => c.text)).toEqual([
+      'I did not know.',
+    ])
+  })
+
+  it('balances long sentences by characters in sentence mode', () => {
+    const text =
+      'Grandma covers her mouth so she does not laugh too loud and then she smiles at me because I am still running in my dream'
+    const captions = layoutCaptions(sentence(text), 'sentence')
+    expect(captions.length).toBe(2)
+    for (const caption of captions) expect(caption.text.length).toBeLessThanOrEqual(84)
+    expect(Math.abs(captions[0].text.length - captions[1].text.length)).toBeLessThan(20)
+    expect(captions.map((c) => c.text).join(' ')).toBe(text)
+  })
+})
