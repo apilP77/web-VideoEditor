@@ -1,7 +1,5 @@
-// TEMPORARY media pipeline logging. Set MEDIA_DEBUG to false (or delete this
-// file and its imports, all tagged "[media:") to remove it. Works in the page
-// and in workers.
-export const MEDIA_DEBUG = true
+// Set to true to log "[media:...]" pipeline details in the page and workers.
+export const MEDIA_DEBUG = false
 
 /**
  * Logs a tagged media-pipeline message when MEDIA_DEBUG is on.
