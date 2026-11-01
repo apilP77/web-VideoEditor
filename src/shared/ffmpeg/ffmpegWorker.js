@@ -3,6 +3,7 @@ import { toBlobURL } from '@ffmpeg/util'
 import {
   buildCropArgs,
   buildExtractAudioArgs,
+  buildPreviewProxyArgs,
   buildSpeedArgs,
   buildTrimArgs,
   buildTrimCropArgs,
@@ -90,6 +91,14 @@ function getOutputDetails(job) {
     }
   }
 
+  if (job.type === 'previewProxy') {
+    return {
+      extension: 'mp4',
+      mimeType: 'video/mp4',
+      filename: `${baseName}-preview.mp4`,
+    }
+  }
+
   const suffix = {
     trim: 'trimmed',
     crop: 'cropped',
@@ -133,6 +142,13 @@ function getCommand(job, inputPath, outputPath, hasAudio = true) {
       })
     case 'extractAudio':
       return buildExtractAudioArgs(inputPath, outputPath)
+    case 'previewProxy':
+      return buildPreviewProxyArgs(
+        inputPath,
+        outputPath,
+        job.width,
+        job.height,
+      )
     default:
       throw new Error('Unsupported FFmpeg operation.')
   }

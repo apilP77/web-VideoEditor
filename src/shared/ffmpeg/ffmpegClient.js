@@ -302,3 +302,19 @@ export function extractAudioFromBuffer(file, fileData, options = {}) {
   }
   return runJob('extractAudio', file, options, fileData)
 }
+
+/**
+ * Creates a smaller H.264/AAC preview copy using the FFmpeg fallback worker.
+ *
+ * @param {File} file Local source video.
+ * @param {number} width Source display width.
+ * @param {number} height Source display height.
+ * @param {{signal?: AbortSignal, onProgress?: (percent: number) => void}} options Cancellation and progress options.
+ * @returns {Promise<{blob: Blob, filename: string}>} Preview video and suggested filename.
+ */
+export function createPreviewProxyWithFFmpeg(file, width, height, options = {}) {
+  return runJob('previewProxy', file, {
+    ...options,
+    jobData: { width, height },
+  })
+}

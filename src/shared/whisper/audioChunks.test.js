@@ -34,6 +34,21 @@ describe('buildAudioChunks', () => {
     ])
   })
 
+  it('splits a longer region into sequential overlapping chunks', () => {
+    expect(
+      buildAudioChunks(
+        [{ start: 0, end: 31 * 16_000 }],
+        16_000,
+        { chunkSeconds: 10, overlapSeconds: 1 },
+      ).map(({ start, end }) => [start, end]),
+    ).toEqual([
+      [0, 10],
+      [9, 19],
+      [18, 28],
+      [27, 31],
+    ])
+  })
+
   it('copies chunk sample ranges into independent Float32Arrays', () => {
     const audio = new Float32Array([0, 0.25, 0.5, 0.75])
     const chunk = copyAudioChunk(audio, 1, 3)

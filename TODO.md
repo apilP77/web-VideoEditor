@@ -107,6 +107,7 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Export MP4 with burned-in captions using Mediabunny and WebCodecs, with real-time WebM fallback
 - [x] Export edited captions as `.srt`, `.vtt`, and `.txt`
 - [x] Keep preview object URLs safe and preserve valid media duration metadata
+- [x] Diagnose preview decoding and make 960px H.264/AAC proxies for large or unsupported videos
 
 ## Phase 9: Shared batch system
 - [ ] Build one reusable batch runner that every tool can plug into

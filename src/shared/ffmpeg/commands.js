@@ -143,6 +143,37 @@ export function buildTrimCropArgs(inputPath, outputPath, start, end, crop, video
 }
 
 /**
+ * Builds a low-resolution H.264/AAC preview-copy command.
+ *
+ * @param {string} inputPath FFmpeg virtual filesystem input path.
+ * @param {string} outputPath FFmpeg virtual filesystem output path.
+ * @param {number} width Source display width.
+ * @param {number} height Source display height.
+ * @returns {string[]} FFmpeg arguments.
+ */
+export function buildPreviewProxyArgs(inputPath, outputPath, width, height) {
+  if (![width, height].every(Number.isFinite) || width <= 0 || height <= 0) {
+    throw new RangeError('Video dimensions must be positive finite numbers.')
+  }
+
+  const scale = width >= height ? '960:-2' : '-2:960'
+  return [
+    '-i', inputPath,
+    '-vf', `scale=${scale}`,
+    '-map', '0:v:0',
+    '-map', '0:a?',
+    '-c:v', 'libx264',
+    '-preset', 'ultrafast',
+    '-crf', '32',
+    '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac',
+    '-b:a', '96k',
+    '-movflags', '+faststart',
+    outputPath,
+  ]
+}
+
+/**
  * Builds an atempo filter chain whose individual stages stay in FFmpeg's supported range.
  *
  * @param {number} factor Playback-speed multiplier.

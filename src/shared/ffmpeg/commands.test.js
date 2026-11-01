@@ -3,6 +3,7 @@ import {
   buildAtempoChain,
   buildCropArgs,
   buildExtractAudioArgs,
+  buildPreviewProxyArgs,
   buildSpeedArgs,
   buildTrimArgs,
   buildTrimCropArgs,
@@ -156,6 +157,31 @@ describe('buildExtractAudioArgs', () => {
       '-ar', '16000',
       '-c:a', 'pcm_s16le',
       'output.wav',
+    ])
+  })
+})
+
+describe('buildPreviewProxyArgs', () => {
+  it('scales portrait and landscape inputs to a 960px long edge', () => {
+    expect(buildPreviewProxyArgs('in.mp4', 'out.mp4', 2160, 3840)).toContain(
+      'scale=-2:960',
+    )
+    expect(buildPreviewProxyArgs('in.mp4', 'out.mp4', 3840, 2160)).toContain(
+      'scale=960:-2',
+    )
+    expect(buildPreviewProxyArgs('in.mp4', 'out.mp4', 2160, 3840)).toEqual([
+      '-i', 'in.mp4',
+      '-vf', 'scale=-2:960',
+      '-map', '0:v:0',
+      '-map', '0:a?',
+      '-c:v', 'libx264',
+      '-preset', 'ultrafast',
+      '-crf', '32',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '96k',
+      '-movflags', '+faststart',
+      'out.mp4',
     ])
   })
 })

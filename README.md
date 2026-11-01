@@ -110,6 +110,17 @@ with WebCodecs as H.264 video and AAC audio while retaining the source audio.
 The worker loads the same bundled caption fonts before drawing. Mediabunny
 reports conversion progress and can cancel the active conversion.
 
+The Captions preview checks browser video dimensions, codec, `canPlayType`,
+decode errors, and whether a frame arrives. Videos with a long edge above
+2000 pixels, or a source with no decodable preview frame, get a local preview
+copy encoded as 960-pixel H.264/AAC. It prefers Mediabunny and WebCodecs, then
+falls back to FFmpeg.wasm. The proxy is used only for preview and audio
+transcription; caption export continues to use the original file. This keeps
+4K and HEVC sources from requiring a full-size preview decode when the browser
+cannot display them directly. If neither local conversion path can read the
+source, the tool explains that an H.264 MP4 conversion or a different browser
+may be needed.
+
 If WebCodecs or the fast encoder fails, the tool records a canvas and the
 source audio with MediaRecorder as WebM. This fallback plays through the
 video in real time, so export takes at least as long as the clip. Both paths

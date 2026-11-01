@@ -71,6 +71,7 @@
   width: fit-content;
   max-width: 100%;
   max-height: min(60vh, 520px);
+  flex: 0 0 auto;
   overflow: hidden;
   place-items: center;
   border-radius: 12px;
@@ -94,7 +95,58 @@
   width: 100%;
   height: 100%;
   z-index: 1;
+  background: transparent;
   pointer-events: none;
+}
+
+.captions-preview-details {
+  color: #aaa3b2;
+  font-size: 0.82rem;
+}
+
+.captions-preview-details summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.captions-preview-details dl {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+}
+
+.captions-preview-details dl > div {
+  display: grid;
+  grid-template-columns: minmax(100px, 0.7fr) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.captions-preview-details dt {
+  color: #c9c1d2;
+}
+
+.captions-preview-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.captions-preview-details pre {
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.captions-preview-error {
+  margin: 0;
+  border: 1px solid #554b39;
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: #211d16;
+  color: #d7c8a9;
+  font-size: 0.84rem;
+  line-height: 1.5;
 }
 
 .captions-safe-area {

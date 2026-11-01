@@ -7,6 +7,7 @@ const UNKNOWN_MEDIA_INFO = Object.freeze({
   duration: 0,
   hasVideo: false,
   hasAudio: 'unknown',
+  codec: null,
 })
 
 function mediaInfoFromFFmpegLog(log) {
@@ -16,6 +17,7 @@ function mediaInfoFromFFmpegLog(log) {
   const videoLine = log.match(/^.*Stream #\S+.*Video:.*$/m)?.[0]
   const audioLine = /^.*Stream #\S+.*Audio:.*$/m.test(log)
   const dimensions = videoLine?.match(/\b(\d{2,5})x(\d{2,5})\b/)
+  const codec = videoLine?.match(/Video:\s*([^,]+)/)?.[1]?.trim() ?? null
 
   if (!durationMatch && !videoLine && !audioLine) {
     throw new Error('FFmpeg did not report recognizable media streams.')
@@ -33,6 +35,7 @@ function mediaInfoFromFFmpegLog(log) {
     duration,
     hasVideo: Boolean(videoLine),
     hasAudio: audioLine,
+    codec,
   }
 }
 
@@ -40,7 +43,7 @@ function mediaInfoFromFFmpegLog(log) {
  * Reads local media metadata, preferring Mediabunny and falling back to FFmpeg.
  *
  * @param {File} file Local media file to inspect.
- * @returns {Promise<{width: number, height: number, duration: number, hasVideo: boolean, hasAudio: boolean | 'unknown'}>} Media dimensions, duration, and track availability.
+ * @returns {Promise<{width: number, height: number, duration: number, hasVideo: boolean, hasAudio: boolean | 'unknown', codec: string | null}>} Media dimensions, duration, codec, and track availability.
  */
 export async function getMediaInfo(file) {
   let input
@@ -62,6 +65,9 @@ export async function getMediaInfo(file) {
     const height = primaryVideoTrack
       ? await primaryVideoTrack.getDisplayHeight()
       : 0
+    const codec = primaryVideoTrack
+      ? await primaryVideoTrack.getCodec()
+      : null
 
     return {
       width,
@@ -69,6 +75,7 @@ export async function getMediaInfo(file) {
       duration,
       hasVideo: videoTracks.length > 0,
       hasAudio: audioTracks.length > 0,
+      codec,
     }
   } catch (error) {
     console.error('Mediabunny media-info inspection failed.', error)
