@@ -1,5 +1,6 @@
 import { extractAudio, extractAudioFromBuffer } from '../ffmpeg/ffmpegClient.js'
 import { chooseAudioDecodePath } from './audioPath.js'
+import { debugLog, MEDIA_DEBUG } from '../utils/debugLog.js'
 
 const TARGET_SAMPLE_RATE = 16_000
 
@@ -39,7 +40,17 @@ async function toMono16k(audioBuffer, signal) {
   const rendered = await context.startRendering()
 
   if (signal?.aborted) throw createAbortError()
-  return rendered.getChannelData(0).slice()
+  const samples = rendered.getChannelData(0).slice()
+  if (MEDIA_DEBUG) {
+    // RMS of 0 means silent audio, which makes Whisper invent text.
+    let squares = 0
+    for (let index = 0; index < samples.length; index += 1) squares += samples[index] ** 2
+    debugLog('audio', 'decoded 16 kHz mono', {
+      seconds: Number((samples.length / TARGET_SAMPLE_RATE).toFixed(2)),
+      rms: Number(Math.sqrt(squares / Math.max(1, samples.length)).toFixed(4)),
+    })
+  }
+  return samples
 }
 
 async function decodeBlob(blob, signal) {
@@ -94,7 +105,13 @@ export async function decodeAudio(file, { signal, onProgress } = {}) {
     detail: 'Reading your audio...',
   })
 
-  if (chooseAudioDecodePath(file) === 'ffmpeg') {
+  const path = chooseAudioDecodePath(file)
+  debugLog('audio', `extracting audio via ${path}`, {
+    file: file.name,
+    type: file.type || 'unknown',
+    sizeMB: Number((file.size / 1048576).toFixed(1)),
+  })
+  if (path === 'ffmpeg') {
     return extractAndDecode(file, { signal, onProgress })
   }
 

@@ -145,7 +145,14 @@ function getProgressDetail(progress, mediaInfo) {
     return `${progress.detail || 'Reading your audio...'} · Length ${formatDuration(mediaInfo?.duration ?? 0)}`
   }
   if (progress?.stage === 'transcribing') {
-    return `Chunk ${progress.chunk ?? 0} of ${progress.total ?? 0} · ${formatDuration(progress.coveredSeconds ?? 0)} of ${formatDuration(mediaInfo?.duration ?? 0)}`
+    // coveredSeconds is legitimately 0 before the first chunk finishes;
+    // formatDuration would call that "Duration unavailable".
+    const covered = Number.isFinite(progress.coveredSeconds) ? progress.coveredSeconds : 0
+    const coveredLabel = `${String(Math.floor(covered / 60)).padStart(2, '0')}:${String(Math.floor(covered % 60)).padStart(2, '0')}`
+    const total = Number.isFinite(mediaInfo?.duration) && mediaInfo.duration > 0
+      ? ` of ${formatDuration(mediaInfo.duration)}`
+      : ''
+    return `Part ${progress.chunk ?? 0} of ${progress.total ?? 0} · ${coveredLabel}${total} heard`
   }
   if (progress?.stage === 'finishing') {
     return 'Stitching words and building segments.'

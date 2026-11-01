@@ -6,6 +6,7 @@ import {
   findSpeechRegions,
 } from './audioChunks.js'
 import { getWhisperBackend } from './backend.js'
+import { debugLog } from '../utils/debugLog.js'
 
 // Word-level timestamps need cross-attention outputs, which only the
 // `_timestamped` exports include. The plain exports fail with
@@ -246,6 +247,18 @@ async function transcribe(request) {
       overlapSeconds: OVERLAP_SECONDS,
     })
     const chunkCount = audioChunks.length
+    debugLog('whisper', 'transcribing', {
+      model: MODEL_IDS[model],
+      device,
+      audioSeconds: Number((audio.length / SAMPLE_RATE).toFixed(2)),
+      speechRegions: regions.length,
+      chunks: chunkCount,
+    })
+    if (chunkCount === 0) {
+      throw Object.assign(new Error('No audio was found to transcribe.'), {
+        userMessage: 'No speech-length audio was found in this file.',
+      })
+    }
     const chunks = []
     let detectedLanguage = null
     sendProgress(requestId, {
@@ -264,7 +277,21 @@ async function transcribe(request) {
       }
 
       const { startSample, endSample, start, end } = audioChunks[index]
+      // Chunk times feed caption timestamps and progress text; never let a
+      // NaN or reversed range through silently.
+      if (![start, end].every(Number.isFinite) || end <= start) {
+        throw Object.assign(
+          new Error(`Chunk ${index + 1} has an invalid time range (${start}–${end}).`),
+          { userMessage: `Transcription failed on chunk ${index + 1} of ${chunkCount}: invalid audio range.` },
+        )
+      }
       const audioChunk = copyAudioChunk(audio, startSample, endSample)
+      const chunkStartedAt = performance.now()
+      debugLog('whisper', `chunk ${index + 1}/${chunkCount} start`, {
+        from: Number(start.toFixed(2)),
+        to: Number(end.toFixed(2)),
+        samples: audioChunk.length,
+      })
       const options = { return_timestamps: 'word', task: 'transcribe' }
       if (language) options.language = language
 
@@ -313,6 +340,11 @@ async function transcribe(request) {
         output.language ??
         wordChunks.find((word) => typeof word.language === 'string')?.language ??
         null
+      debugLog('whisper', `chunk ${index + 1}/${chunkCount} done`, {
+        words: words.length,
+        ms: Math.round(performance.now() - chunkStartedAt),
+        text: words.slice(0, 8).map((word) => word.word).join(''),
+      })
       chunks.push({ start, end, words })
       sendProgress(requestId, {
         stage: 'transcribing',

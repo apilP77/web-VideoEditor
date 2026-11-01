@@ -54,7 +54,14 @@ function handleWorkerMessage(event) {
     return
   }
   if (message.type === 'error') {
-    job.reject(new Error(message.message || 'FFmpeg could not process this file.'))
+    // The worker appends FFmpeg's own log; show it under "Details" instead
+    // of in the main message.
+    const [summary, log] = String(
+      message.message || 'FFmpeg could not process this file.',
+    ).split('\n\nFFmpeg log:\n')
+    const error = new Error(summary)
+    if (log) error.technicalDetails = `FFmpeg log:\n${log}`
+    job.reject(error)
     return
   }
 
