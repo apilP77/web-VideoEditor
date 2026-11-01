@@ -20,6 +20,7 @@ import {
 import { isVideoFile } from '../../shared/utils/mediaFiles'
 import { getMonotonicTime } from '../../shared/utils/timing'
 import { getMediaInfo } from '../../shared/media/mediaInfo'
+import { useObjectUrl } from '../../shared/media/useObjectUrl'
 import './cropTrim.css'
 
 const ASPECT_PRESETS = [
@@ -56,7 +57,7 @@ function CropTrim({ tool }) {
   const dragRef = useRef(null)
   const abortControllerRef = useRef(null)
   const [file, setFile] = useState(null)
-  const [sourceUrl, setSourceUrl] = useState('')
+  const sourceUrl = useObjectUrl(file)
   const [result, setResult] = useState(null)
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 })
   const [mediaInfo, setMediaInfo] = useState(UNKNOWN_MEDIA_INFO)
@@ -76,11 +77,6 @@ function CropTrim({ tool }) {
   const [error, setError] = useState('')
   const [metadataError, setMetadataError] = useState('')
   const isExporting = status === 'processing'
-
-  useEffect(() => {
-    if (!sourceUrl) return undefined
-    return () => URL.revokeObjectURL(sourceUrl)
-  }, [sourceUrl])
 
   useEffect(() => {
     if (!result?.url) return undefined
@@ -135,7 +131,6 @@ function CropTrim({ tool }) {
 
     abortControllerRef.current?.abort()
     setFile(selectedFile)
-    setSourceUrl(URL.createObjectURL(selectedFile))
     setResult(null)
     setSaved(false)
     setStatus('idle')
@@ -431,7 +426,6 @@ function CropTrim({ tool }) {
     abortControllerRef.current?.abort()
     setStatus('idle')
     setFile(null)
-    setSourceUrl('')
     setResult(null)
     setVideoSize({ width: 0, height: 0 })
     setDuration(0)
@@ -492,7 +486,7 @@ function CropTrim({ tool }) {
             <video
               ref={videoRef}
               className="metadata-loader"
-              src={sourceUrl}
+              src={sourceUrl || undefined}
               preload="metadata"
               playsInline
               onLoadedMetadata={handleMetadata}
@@ -533,7 +527,7 @@ function CropTrim({ tool }) {
                       <video
                         ref={videoRef}
                         className="source-video"
-                        src={sourceUrl}
+                        src={sourceUrl || undefined}
                         playsInline
                         onLoadedMetadata={handleMetadata}
                         onError={() => handleMetadataError(

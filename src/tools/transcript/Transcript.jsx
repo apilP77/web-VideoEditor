@@ -14,7 +14,9 @@ import UploadBox from '../../shared/components/UploadBox.jsx'
 import VideoPlayerControls from '../../shared/components/VideoPlayerControls.jsx'
 import { useResultCardAttention } from '../../shared/hooks/useResultCardAttention.js'
 import { decodeAudio } from '../../shared/media/decodeAudio.js'
+import { getMediaDuration } from '../../shared/media/duration.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
+import { useObjectUrl } from '../../shared/media/useObjectUrl.js'
 import {
   applyEditedText,
   formatTimestamp,
@@ -173,7 +175,7 @@ function Transcript({ tool }) {
   const progressRef = useRef(null)
   const lastDownloadRef = useRef(null)
   const [file, setFile] = useState(null)
-  const [sourceUrl, setSourceUrl] = useState('')
+  const sourceUrl = useObjectUrl(file)
   const [mediaInfo, setMediaInfo] = useState(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -217,11 +219,6 @@ function Transcript({ tool }) {
     Boolean(mediaInfo?.hasVideo) &&
     ((mediaInfo.duration ?? 0) > 3 * 60 || (file?.size ?? 0) > 500 * 1024 * 1024)
 
-  useEffect(() => {
-    if (!sourceUrl) return undefined
-    return () => URL.revokeObjectURL(sourceUrl)
-  }, [sourceUrl])
-
   useEffect(() => () => abortControllerRef.current?.abort(), [])
 
   useEffect(() => {
@@ -233,7 +230,14 @@ function Transcript({ tool }) {
     }
 
     getMediaInfo(file).then((info) => {
-      if (active) setMediaInfo(info)
+      if (active) {
+        setMediaInfo((current) => ({
+          ...info,
+          width: info.width || current?.width || 0,
+          height: info.height || current?.height || 0,
+          duration: getMediaDuration(current?.duration, info.duration),
+        }))
+      }
     })
     return () => {
       active = false
@@ -282,7 +286,6 @@ function Transcript({ tool }) {
 
     abortControllerRef.current?.abort()
     setFile(selectedFile)
-    setSourceUrl(URL.createObjectURL(selectedFile))
     setMediaInfo(null)
     setResult(null)
     setProgress(null)
@@ -302,7 +305,6 @@ function Transcript({ tool }) {
   function startOver() {
     abortControllerRef.current?.abort()
     setFile(null)
-    setSourceUrl('')
     setMediaInfo(null)
     setResult(null)
     setProgress(null)
@@ -494,11 +496,9 @@ function Transcript({ tool }) {
     const media = event.currentTarget
     setMediaInfo((current) => ({
       ...current,
-      width: media.videoWidth ?? current?.width ?? 0,
-      height: media.videoHeight ?? current?.height ?? 0,
-      duration: Number.isFinite(media.duration)
-        ? media.duration
-        : current?.duration ?? 0,
+      width: media.videoWidth || current?.width || 0,
+      height: media.videoHeight || current?.height || 0,
+      duration: getMediaDuration(media.duration, current?.duration),
       hasVideo: media instanceof HTMLVideoElement,
     }))
   }
@@ -548,7 +548,7 @@ function Transcript({ tool }) {
     }
   }
 
-  const duration = mediaInfo?.duration ?? 0
+  const duration = getMediaDuration(mediaInfo?.duration)
   const hasVideo = mediaInfo?.hasVideo === true
   const hasMediaDuration = Number.isFinite(duration) && duration > 0
   const actionLabel =
@@ -629,7 +629,7 @@ function Transcript({ tool }) {
                     <video
                       ref={videoRef}
                       className="transcript-source-video"
-                      src={sourceUrl}
+                      src={sourceUrl || undefined}
                       playsInline
                       preload="metadata"
                       onLoadedMetadata={handleMediaMetadata}
@@ -654,7 +654,7 @@ function Transcript({ tool }) {
                       <span>{file.name}</span>
                       <audio
                         ref={audioRef}
-                        src={sourceUrl}
+                        src={sourceUrl || undefined}
                         preload="metadata"
                         onLoadedMetadata={handleMediaMetadata}
                         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}

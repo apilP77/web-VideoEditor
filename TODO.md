@@ -67,6 +67,7 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Sequential chunk transcription with per-chunk progress
 - [x] Stitching: offset timestamps, remove duplicate words in overlaps
 - [x] Auto-detect language with manual override
+- [x] Report chunk-specific transcription errors with model and backend details
 - [ ] Test on a 3-5 minute video; check memory use
 - [x] Cancel button that stops the worker cleanly
 
@@ -105,6 +106,7 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Save and restore caption projects locally for 14 days
 - [x] Export MP4 with burned-in captions using Mediabunny and WebCodecs, with real-time WebM fallback
 - [x] Export edited captions as `.srt`, `.vtt`, and `.txt`
+- [x] Keep preview object URLs safe and preserve valid media duration metadata
 
 ## Phase 9: Shared batch system
 - [ ] Build one reusable batch runner that every tool can plug into

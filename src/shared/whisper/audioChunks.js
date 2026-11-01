@@ -102,3 +102,28 @@ export function buildAudioChunks(
 
   return chunks
 }
+
+/**
+ * Copies one audio chunk into an independent Float32Array for inference.
+ *
+ * @param {Float32Array} audio Mono audio samples at 16 kHz.
+ * @param {number} startSample Inclusive first sample index.
+ * @param {number} endSample Exclusive final sample index.
+ * @returns {Float32Array} Independent chunk samples.
+ */
+export function copyAudioChunk(audio, startSample, endSample) {
+  if (!(audio instanceof Float32Array)) {
+    throw new TypeError('Audio chunks must be copied from a Float32Array.')
+  }
+  if (
+    !Number.isInteger(startSample) ||
+    !Number.isInteger(endSample) ||
+    startSample < 0 ||
+    endSample <= startSample ||
+    endSample > audio.length
+  ) {
+    throw new RangeError('Audio chunk boundaries are outside the sample data.')
+  }
+
+  return audio.slice(startSample, endSample)
+}

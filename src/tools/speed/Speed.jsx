@@ -11,6 +11,7 @@ import { isVideoFile } from '../../shared/utils/mediaFiles.js'
 import { getMonotonicTime } from '../../shared/utils/timing.js'
 import { calculateNewDuration } from '../../shared/media/speed.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
+import { useObjectUrl } from '../../shared/media/useObjectUrl.js'
 import './speed.css'
 
 const SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
@@ -38,7 +39,7 @@ function Speed({ tool }) {
   const videoRef = useRef(null)
   const abortControllerRef = useRef(null)
   const [file, setFile] = useState(null)
-  const [sourceUrl, setSourceUrl] = useState('')
+  const sourceUrl = useObjectUrl(file)
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 })
   const [mediaInfo, setMediaInfo] = useState(UNKNOWN_MEDIA_INFO)
   const [duration, setDuration] = useState(0)
@@ -58,11 +59,6 @@ function Speed({ tool }) {
   const isExporting = status === 'processing'
   const hasMetadata = videoSize.width > 0 && duration > 0
   const { cardRef, highlighted } = useResultCardAttention(result)
-
-  useEffect(() => {
-    if (!sourceUrl) return undefined
-    return () => URL.revokeObjectURL(sourceUrl)
-  }, [sourceUrl])
 
   useEffect(() => {
     if (!result?.url) return undefined
@@ -108,7 +104,6 @@ function Speed({ tool }) {
 
     abortControllerRef.current?.abort()
     setFile(selectedFile)
-    setSourceUrl(URL.createObjectURL(selectedFile))
     setVideoSize({ width: 0, height: 0 })
     setMediaInfo(UNKNOWN_MEDIA_INFO)
     setDuration(0)
@@ -166,7 +161,6 @@ function Speed({ tool }) {
   function startOver() {
     abortControllerRef.current?.abort()
     setFile(null)
-    setSourceUrl('')
     setVideoSize({ width: 0, height: 0 })
     setMediaInfo(UNKNOWN_MEDIA_INFO)
     setDuration(0)
@@ -300,7 +294,7 @@ function Speed({ tool }) {
                     <video
                       ref={videoRef}
                       className="speed-source-video"
-                      src={sourceUrl}
+                      src={sourceUrl || undefined}
                       playsInline
                       preload="metadata"
                       onLoadedMetadata={handleMetadata}

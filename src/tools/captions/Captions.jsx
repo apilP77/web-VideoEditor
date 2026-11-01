@@ -24,8 +24,10 @@ import ToolLayout from '../../shared/components/ToolLayout.jsx'
 import UploadBox from '../../shared/components/UploadBox.jsx'
 import VideoPlayerControls from '../../shared/components/VideoPlayerControls.jsx'
 import { decodeAudio } from '../../shared/media/decodeAudio.js'
+import { getMediaDuration } from '../../shared/media/duration.js'
 import { getVideoFrameRate } from '../../shared/media/frameRate.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
+import { useObjectUrl } from '../../shared/media/useObjectUrl.js'
 import {
   CAPTION_PACES,
   deleteCaption,
@@ -250,9 +252,10 @@ function Captions({ tool }) {
   const progressRef = useRef(null)
   const activeCaptionRef = useRef(-1)
   const [file, setFile] = useState(null)
-  const [sourceUrl, setSourceUrl] = useState('')
+  const sourceUrl = useObjectUrl(file)
   const [mediaInfo, setMediaInfo] = useState(null)
   const [frameRate, setFrameRate] = useState(null)
+  const [previewFrameVersion, setPreviewFrameVersion] = useState(0)
   const [currentTime, setCurrentTime] = useState(0)
   const [activeCaptionIndex, setActiveCaptionIndex] = useState(-1)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -341,11 +344,6 @@ function Captions({ tool }) {
     }
   }, [])
 
-  useEffect(() => {
-    if (!sourceUrl) return undefined
-    return () => URL.revokeObjectURL(sourceUrl)
-  }, [sourceUrl])
-
   useEffect(() => () => abortControllerRef.current?.abort(), [])
   useEffect(() => () => exportAbortControllerRef.current?.abort(), [])
 
@@ -371,7 +369,14 @@ function Captions({ tool }) {
     }
     getMediaInfo(file)
       .then((info) => {
-        if (active) setMediaInfo(info)
+        if (active) {
+          setMediaInfo((current) => ({
+            ...info,
+            width: info.width || current?.width || 0,
+            height: info.height || current?.height || 0,
+            duration: getMediaDuration(current?.duration, info.duration),
+          }))
+        }
       })
       .catch((mediaError) => {
         console.error('Could not inspect the selected video.', mediaError)
@@ -454,7 +459,16 @@ function Captions({ tool }) {
         video.cancelVideoFrameCallback(videoFrame)
       }
     }
-  }, [captions, fontsReady, isPlaying, mediaInfo?.height, mediaInfo?.width, sourceUrl, style])
+  }, [
+    captions,
+    fontsReady,
+    isPlaying,
+    mediaInfo?.height,
+    mediaInfo?.width,
+    previewFrameVersion,
+    sourceUrl,
+    style,
+  ])
 
   useEffect(() => {
     const activeRow = editorListRef.current?.querySelector('[data-active="true"]')
@@ -474,9 +488,9 @@ function Captions({ tool }) {
     exportAbortControllerRef.current?.abort()
     const shouldRestore = restoredProject && lastProject?.fileName === selectedFile.name
     setFile(selectedFile)
-    setSourceUrl(URL.createObjectURL(selectedFile))
     setMediaInfo(null)
     setFrameRate(null)
+    setPreviewFrameVersion(0)
     setExportResult(null)
     setExportStatus('idle')
     setExportProgress(null)
@@ -510,9 +524,9 @@ function Captions({ tool }) {
     abortControllerRef.current?.abort()
     exportAbortControllerRef.current?.abort()
     setFile(null)
-    setSourceUrl('')
     setMediaInfo(null)
     setFrameRate(null)
+    setPreviewFrameVersion(0)
     setCurrentTime(0)
     setActiveCaptionIndex(-1)
     activeCaptionRef.current = -1
@@ -556,6 +570,28 @@ function Captions({ tool }) {
     ) {
       setProgressUpdatedAt(getMonotonicTime())
     }
+  }
+
+  function handleVideoMetadata(event) {
+    const video = event.currentTarget
+    const validDuration = getMediaDuration(video.duration, mediaInfo?.duration)
+    setMediaInfo((current) => ({
+      ...current,
+      width: video.videoWidth || current?.width || 0,
+      height: video.videoHeight || current?.height || 0,
+      duration: getMediaDuration(video.duration, current?.duration),
+      hasVideo: true,
+    }))
+    if (video.currentTime === 0 && validDuration > 0) {
+      video.currentTime = Math.min(0.01, validDuration / 2)
+    }
+    setPreviewFrameVersion((version) => version + 1)
+  }
+
+  function handleVideoSeeked(event) {
+    const video = event.currentTarget
+    setCurrentTime(video.currentTime)
+    setPreviewFrameVersion((version) => version + 1)
   }
 
   async function runTranscription() {
@@ -767,7 +803,7 @@ function Captions({ tool }) {
     link.click()
   }
 
-  const duration = mediaInfo?.duration ?? 0
+  const duration = getMediaDuration(mediaInfo?.duration)
   const stageId = failedStage ?? progress?.stage ?? 'loading-model'
   const progressDetail = formatProgressDetail(progress, duration)
   const actionLabel = status === 'error'
@@ -838,43 +874,37 @@ function Captions({ tool }) {
                     )}
                   </div>
                   <div className="captions-video-frame">
-                    <video
-                      ref={videoRef}
-                      className="captions-video"
-                      src={sourceUrl}
-                      playsInline
-                      preload="metadata"
-                      onLoadedMetadata={(event) => {
-                        const video = event.currentTarget
-                        setMediaInfo((current) => ({
-                          ...current,
-                          width: video.videoWidth,
-                          height: video.videoHeight,
-                          duration: Number.isFinite(video.duration) ? video.duration : 0,
-                          hasVideo: true,
-                        }))
-                      }}
-                      onTimeUpdate={(event) => {
-                        const time = event.currentTarget.currentTime
-                        setCurrentTime(time)
-                        const nextIndex = getActiveCaption(captions, time)
-                        activeCaptionRef.current = nextIndex
-                        setActiveCaptionIndex(nextIndex)
-                      }}
-                      onPlay={() => setIsPlaying(true)}
-                      onPause={() => setIsPlaying(false)}
-                      onError={() => setError('This video could not be played in the browser.')}
-                    />
-                    <canvas
-                      ref={canvasRef}
-                      className="captions-overlay"
-                      aria-hidden="true"
-                    />
-                    {positionDragging && (
-                      <div className="captions-safe-area" aria-hidden="true">
-                        <span>Safe text area</span>
-                      </div>
-                    )}
+                    <div className="captions-video-stage">
+                      <video
+                        ref={videoRef}
+                        className="captions-video"
+                        src={sourceUrl || undefined}
+                        playsInline
+                        preload="metadata"
+                        onLoadedMetadata={handleVideoMetadata}
+                        onSeeked={handleVideoSeeked}
+                        onTimeUpdate={(event) => {
+                          const time = event.currentTarget.currentTime
+                          setCurrentTime(time)
+                          const nextIndex = getActiveCaption(captions, time)
+                          activeCaptionRef.current = nextIndex
+                          setActiveCaptionIndex(nextIndex)
+                        }}
+                        onPlay={() => setIsPlaying(true)}
+                        onPause={() => setIsPlaying(false)}
+                        onError={() => setError('This video could not be played in the browser.')}
+                      />
+                      <canvas
+                        ref={canvasRef}
+                        className="captions-overlay"
+                        aria-hidden="true"
+                      />
+                      {positionDragging && (
+                        <div className="captions-safe-area" aria-hidden="true">
+                          <span>Safe text area</span>
+                        </div>
+                      )}
+                    </div>
                     {!fontsReady && (
                       <p className="captions-font-loading" role="status">
                         Preparing caption fonts…

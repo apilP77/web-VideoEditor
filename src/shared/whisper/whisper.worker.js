@@ -1,6 +1,10 @@
 import { env, pipeline } from '@huggingface/transformers'
 import { stitchChunks } from '../captions/transcript.js'
-import { buildAudioChunks, findSpeechRegions } from './audioChunks.js'
+import {
+  buildAudioChunks,
+  copyAudioChunk,
+  findSpeechRegions,
+} from './audioChunks.js'
 import { getWhisperBackend } from './backend.js'
 
 const MODEL_IDS = {
@@ -80,7 +84,7 @@ function postError(requestId, userMessage, error, extra = {}) {
     type: 'error',
     requestId,
     userMessage,
-    technicalDetails: getTechnicalDetails(error),
+    technicalDetails: error?.technicalDetails ?? getTechnicalDetails(error),
     ...extra,
   })
 }
@@ -164,7 +168,8 @@ async function runRequest(request, work) {
     }
     postError(
       requestId,
-      'Transcription could not finish. Check the file and try again.',
+      error?.userMessage ??
+        'Transcription could not finish. Check the file and try again.',
       error,
     )
   } finally {
@@ -216,7 +221,7 @@ async function transcribe(request) {
       stage: 'transcribing',
       backend: device,
       percent: 0,
-      chunk: 0,
+      chunk: chunkCount > 0 ? 1 : 0,
       total: chunkCount,
       coveredSeconds: 0,
     })
@@ -228,11 +233,31 @@ async function transcribe(request) {
       }
 
       const { startSample, endSample, start, end } = audioChunks[index]
-      const audioChunk = audio.subarray(startSample, endSample)
+      const audioChunk = copyAudioChunk(audio, startSample, endSample)
       const options = { return_timestamps: 'word', task: 'transcribe' }
       if (language) options.language = language
 
-      const output = await transcriber(audioChunk, options)
+      let output
+      try {
+        output = await transcriber(audioChunk, options)
+      } catch (chunkError) {
+        const underlyingMessage =
+          chunkError instanceof Error ? chunkError.message : String(chunkError)
+        const context = `Chunk ${index + 1} of ${chunkCount}; model ${model} (${MODEL_IDS[model]}); backend ${device}.`
+        const technicalDetails = [
+          context,
+          `Underlying error: ${underlyingMessage}`,
+          getTechnicalDetails(chunkError),
+        ].join('\n\n')
+        console.error(`Whisper transcription failed. ${context}`, chunkError)
+        const error = new Error(
+          `Transcription failed on chunk ${index + 1} of ${chunkCount}. Check the details and try again.`,
+          { cause: chunkError },
+        )
+        error.userMessage = error.message
+        error.technicalDetails = technicalDetails
+        throw error
+      }
       if (isCancelled(requestId)) {
         self.postMessage({ type: 'cancelled', requestId })
         return

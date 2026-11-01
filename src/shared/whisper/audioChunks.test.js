@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { buildAudioChunks, findSpeechRegions } from './audioChunks.js'
+import {
+  buildAudioChunks,
+  copyAudioChunk,
+  findSpeechRegions,
+} from './audioChunks.js'
 
 describe('findSpeechRegions', () => {
   it('keeps quiet audio around speech and skips long silent gaps', () => {
@@ -28,5 +32,14 @@ describe('buildAudioChunks', () => {
       [29, 59],
       [58, 60],
     ])
+  })
+
+  it('copies chunk sample ranges into independent Float32Arrays', () => {
+    const audio = new Float32Array([0, 0.25, 0.5, 0.75])
+    const chunk = copyAudioChunk(audio, 1, 3)
+
+    expect(chunk).toBeInstanceOf(Float32Array)
+    expect(Array.from(chunk)).toEqual([0.25, 0.5])
+    expect(chunk.buffer).not.toBe(audio.buffer)
   })
 })
