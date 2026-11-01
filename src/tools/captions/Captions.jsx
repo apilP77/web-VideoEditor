@@ -398,7 +398,7 @@ function Captions({ tool }) {
     previewDimensions.width,
     previewDimensions.height,
     previewMaxWidth,
-    Math.min(520, window.innerHeight * 0.6),
+    Math.min(440, window.innerHeight * 0.5),
   )
   const captionWords = useMemo(() => getCaptionExportWords(captions), [captions])
   const settingsSnapshot = useMemo(
@@ -994,6 +994,97 @@ function Captions({ tool }) {
   const shouldWarnAboutLongVideo =
     duration > 3 * 60 || (file?.size ?? 0) > 500 * 1024 * 1024
 
+  const transcriptionForm = (
+    <>
+      <p className="captions-model-note">
+        The selected model downloads on its first run and is cached on this device.
+      </p>
+      {spokenLanguage && (
+        <div className="captions-language-row">
+          <p>
+            Spoken language: <strong>{languageLabel}, detected</strong>
+          </p>
+          <button
+            type="button"
+            className="text-button"
+            disabled={isProcessing}
+            onClick={() => setShowLanguagePicker((visible) => !visible)}
+          >
+            Change
+          </button>
+        </div>
+      )}
+      {(!spokenLanguage || showLanguagePicker) && (
+        <label className="captions-field" htmlFor="captions-language">
+          Language
+          <select
+            id="captions-language"
+            value={language}
+            disabled={isProcessing}
+            onChange={(event) => setLanguage(event.target.value)}
+          >
+            {LANGUAGE_OPTIONS.map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label className="captions-field" htmlFor="captions-model">
+        Model
+        <select
+          id="captions-model"
+          value={model}
+          disabled={isProcessing}
+          onChange={(event) => setModel(event.target.value)}
+        >
+          {MODEL_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+      {shouldWarnAboutLongVideo && (
+        <p className="captions-warning" role="status">
+          Long videos can be slow and use a lot of memory. Close other tabs.
+        </p>
+      )}
+      {status === 'error' && (
+        <div className="captions-error" role="alert">
+          <p className="tool-error">{error}</p>
+          {technicalDetails && (
+            <details>
+              <summary>Details</summary>
+              <pre>{technicalDetails}</pre>
+            </details>
+          )}
+        </div>
+      )}
+      <Button
+        variant={captions.length > 0 ? 'outline' : 'primary'}
+        className="captions-transcribe-button"
+        disabled={isProcessing}
+        onClick={() => runTranscription()}
+      >
+        {actionLabel}
+      </Button>
+        {status === 'error' && (
+          <ProcessingRing
+            stages={PROCESSING_STAGES}
+            stageId={stageId}
+            percent={progress?.percent ?? null}
+            startedAt={startedAt}
+            progressUpdatedAt={progressUpdatedAt}
+            detail={progressDetail}
+            failedStage={failedStage}
+            onCancel={
+              status === 'processing'
+                ? () => abortControllerRef.current?.abort()
+                : undefined
+            }
+          />
+        )}
+    </>
+  )
+
   return (
     <ToolLayout
       tool={tool}
@@ -1168,153 +1259,6 @@ function Captions({ tool }) {
                     onSeek={seekVideo}
                   />
                 </section>
-
-                {flowStep === 2 && (
-                <section
-                  className="tool-panel captions-editor-panel"
-                  aria-labelledby="caption-list-heading"
-                >
-                  <div className="panel-heading">
-                    <div>
-                      <h2 id="caption-list-heading">Caption editor</h2>
-                      <p>
-                        {spokenLanguage
-                          ? `Spoken language: ${languageLabel}, detected`
-                          : 'Edit wording and timing while keeping each caption in sync.'}
-                      </p>
-                    </div>
-                    <span className="captions-count">{captions.length} total</span>
-                  </div>
-                  {captions.length === 0 && status === 'processing' ? (
-                    <div className="captions-live-skeleton is-editor" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                  ) : captions.length === 0 ? (
-                    <p className="captions-empty">
-                      Create captions to see each timed line here.
-                    </p>
-                  ) : (
-                    <ol className="captions-list" ref={editorListRef}>
-                      {captions.map((caption, index) => {
-                        const active = index === activeCaptionIndex
-                        const activeWordIndex = active
-                          ? getActiveWordIndex(caption, currentTime)
-                          : -1
-                        return (
-                          <li
-                            key={`${caption.start}-${index}`}
-                            className={`caption-row${active ? ' is-active' : ''}`}
-                            data-active={active ? 'true' : 'false'}
-                            onClick={(event) => {
-                              if (
-                                !isProcessing &&
-                                !event.target.closest('button, textarea')
-                              ) {
-                                seekVideo(caption.start)
-                              }
-                            }}
-                          >
-                            <div className="caption-row-top">
-                              <button
-                                type="button"
-                                className="caption-time-button"
-                                disabled={isProcessing}
-                                onClick={() => seekVideo(caption.start)}
-                                aria-label={`Seek to caption ${index + 1} at ${formatTime(caption.start)}`}
-                              >
-                                {formatTime(caption.start)}
-                              </button>
-                              <div className="caption-row-actions">
-                                <span className="caption-nudge-group" aria-label="Adjust caption start">
-                                  <button type="button" aria-label="Move start earlier by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionStart(item, -NUDGE_SECONDS))}><ChevronLeft size={15} /></button>
-                                  <button type="button" aria-label="Move start later by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionStart(item, NUDGE_SECONDS))}><ChevronRight size={15} /></button>
-                                </span>
-                                <span className="caption-nudge-group" aria-label="Adjust caption end">
-                                  <button type="button" aria-label="Move end earlier by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionEnd(item, -NUDGE_SECONDS))}><ChevronLeft size={15} /></button>
-                                  <button type="button" aria-label="Move end later by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionEnd(item, NUDGE_SECONDS))}><ChevronRight size={15} /></button>
-                                </span>
-                                <button
-                                  type="button"
-                                  className="caption-icon-button"
-                                  aria-label={`Split caption ${index + 1}`}
-                                  title="Split caption"
-                                  disabled={isProcessing || caption.words.length < 2}
-                                  onClick={() => handleSplit(index)}
-                                >
-                                  <Scissors size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="caption-icon-button"
-                                  aria-label={`Merge caption ${index + 1} with the next`}
-                                  title="Merge with next"
-                                  disabled={isProcessing || index === captions.length - 1}
-                                  onClick={() => handleMerge(index)}
-                                >
-                                  <Merge size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="caption-icon-button is-delete"
-                                  aria-label={`Delete caption ${index + 1}`}
-                                  title="Delete caption"
-                                  disabled={isProcessing}
-                                  onClick={() => setCaptions((current) => deleteCaption(current, index))}
-                                >
-                                  <Trash2 size={15} />
-                                </button>
-                              </div>
-                            </div>
-                            <div className="caption-row-text">
-                              <textarea
-                                value={caption.text}
-                                rows={Math.min(3, Math.max(1, Math.ceil(caption.text.length / 48)))}
-                                aria-label={`Edit caption ${index + 1}`}
-                                disabled={isProcessing}
-                                onChange={(event) =>
-                                  updateCaption(index, (item) =>
-                                    editCaptionText(item, event.target.value),
-                                  )
-                                }
-                              />
-                              {caption.words.map((word, wordIndex) => {
-                                const review = reviewWords.get(
-                                  `${word.start}:${word.end}:${word.word}`,
-                                )
-                                return review ? (
-                                  <span
-                                    key={`${word.start}-${wordIndex}`}
-                                    className="caption-review-marker"
-                                    title={review}
-                                  >
-                                    Check “{word.word}”
-                                  </span>
-                                ) : null
-                              })}
-                            </div>
-                            {active && activeWordIndex >= 0 && (
-                              <span className="caption-current-word" aria-live="polite">
-                                Playing word {activeWordIndex + 1} of {caption.words.length}
-                              </span>
-                            )}
-                          </li>
-                        )
-                      })}
-                    </ol>
-                  )}
-                  {captions.length > 0 && (
-                    <Button
-                      className="captions-next-step"
-                      disabled={isProcessing}
-                      onClick={() => setFlowStep(3)}
-                    >
-                      Looks good, style them
-                    </Button>
-                  )}
-                </section>
-                )}
               </div>
 
               <div className="editor-controls">
@@ -1565,6 +1509,140 @@ function Captions({ tool }) {
                 </>
                 )}
 
+                {flowStep === 2 && hasCaptions && (
+                <section
+                  className="tool-panel captions-editor-panel"
+                  aria-labelledby="caption-list-heading"
+                >
+                  <div className="panel-heading">
+                    <div>
+                      <h2 id="caption-list-heading">Caption editor</h2>
+                      <p>
+                        {spokenLanguage
+                          ? `Spoken language: ${languageLabel}, detected`
+                          : 'Edit wording and timing while keeping each caption in sync.'}
+                      </p>
+                    </div>
+                    <span className="captions-count">{captions.length} total</span>
+                  </div>
+                  <ol className="captions-list" ref={editorListRef}>
+                    {captions.map((caption, index) => {
+                      const active = index === activeCaptionIndex
+                      const activeWordIndex = active
+                        ? getActiveWordIndex(caption, currentTime)
+                        : -1
+                      return (
+                        <li
+                          key={`${caption.start}-${index}`}
+                          className={`caption-row${active ? ' is-active' : ''}`}
+                          data-active={active ? 'true' : 'false'}
+                          onClick={(event) => {
+                            if (
+                              !isProcessing &&
+                              !event.target.closest('button, textarea')
+                            ) {
+                              seekVideo(caption.start)
+                            }
+                          }}
+                        >
+                          <div className="caption-row-top">
+                            <button
+                              type="button"
+                              className="caption-time-button"
+                              disabled={isProcessing}
+                              onClick={() => seekVideo(caption.start)}
+                              aria-label={`Seek to caption ${index + 1} at ${formatTime(caption.start)}`}
+                            >
+                              {formatTime(caption.start)}
+                            </button>
+                            <div className="caption-row-actions">
+                              <span className="caption-nudge-group" aria-label="Adjust caption start">
+                                <button type="button" aria-label="Move start earlier by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionStart(item, -NUDGE_SECONDS))}><ChevronLeft size={15} /></button>
+                                <button type="button" aria-label="Move start later by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionStart(item, NUDGE_SECONDS))}><ChevronRight size={15} /></button>
+                              </span>
+                              <span className="caption-nudge-group" aria-label="Adjust caption end">
+                                <button type="button" aria-label="Move end earlier by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionEnd(item, -NUDGE_SECONDS))}><ChevronLeft size={15} /></button>
+                                <button type="button" aria-label="Move end later by 0.05 seconds" disabled={isProcessing} onClick={() => updateCaption(index, (item) => nudgeCaptionEnd(item, NUDGE_SECONDS))}><ChevronRight size={15} /></button>
+                              </span>
+                              <button
+                                type="button"
+                                className="caption-icon-button"
+                                aria-label={`Split caption ${index + 1}`}
+                                title="Split caption"
+                                disabled={isProcessing || caption.words.length < 2}
+                                onClick={() => handleSplit(index)}
+                              >
+                                <Scissors size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                className="caption-icon-button"
+                                aria-label={`Merge caption ${index + 1} with the next`}
+                                title="Merge with next"
+                                disabled={isProcessing || index === captions.length - 1}
+                                onClick={() => handleMerge(index)}
+                              >
+                                <Merge size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                className="caption-icon-button is-delete"
+                                aria-label={`Delete caption ${index + 1}`}
+                                title="Delete caption"
+                                disabled={isProcessing}
+                                onClick={() => setCaptions((current) => deleteCaption(current, index))}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </div>
+                          <div className="caption-row-text">
+                            <textarea
+                              value={caption.text}
+                              rows={Math.min(3, Math.max(1, Math.ceil(caption.text.length / 48)))}
+                              aria-label={`Edit caption ${index + 1}`}
+                              disabled={isProcessing}
+                              onChange={(event) =>
+                                updateCaption(index, (item) =>
+                                  editCaptionText(item, event.target.value),
+                                )
+                              }
+                            />
+                            {caption.words.map((word, wordIndex) => {
+                              const review = reviewWords.get(
+                                `${word.start}:${word.end}:${word.word}`,
+                              )
+                              return review ? (
+                                <span
+                                  key={`${word.start}-${wordIndex}`}
+                                  className="caption-review-marker"
+                                  title={review}
+                                >
+                                  Check “{word.word}”
+                                </span>
+                              ) : null
+                            })}
+                          </div>
+                          {active && activeWordIndex >= 0 && (
+                            <span className="caption-current-word" aria-live="polite">
+                              Playing word {activeWordIndex + 1} of {caption.words.length}
+                            </span>
+                          )}
+                        </li>
+                      )
+                    })}
+                  </ol>
+                  {captions.length > 0 && (
+                    <Button
+                      className="captions-next-step"
+                      disabled={isProcessing}
+                      onClick={() => setFlowStep(3)}
+                    >
+                      Looks good, style them
+                    </Button>
+                  )}
+                </section>
+                )}
                 {flowStep === 2 && (
                 <section className="tool-panel captions-transcription-panel" aria-label="Speech to captions">
                   {status === 'processing' ? (
@@ -1594,95 +1672,15 @@ function Captions({ tool }) {
                       />
                       <LiveTranscript words={liveWords} />
                     </div>
+                  ) : hasCaptions && status !== 'error' ? (
+                    <details className="captions-redo">
+                      <summary>Change language or model and redo</summary>
+                      {transcriptionForm}
+                    </details>
                   ) : (
                     <>
-                    <h2>Speech to captions</h2>
-                    <p className="captions-model-note">
-                      The selected model downloads on its first run and is cached on this device.
-                    </p>
-                    {spokenLanguage && (
-                      <div className="captions-language-row">
-                        <p>
-                          Spoken language: <strong>{languageLabel}, detected</strong>
-                        </p>
-                        <button
-                          type="button"
-                          className="text-button"
-                          disabled={isProcessing}
-                          onClick={() => setShowLanguagePicker((visible) => !visible)}
-                        >
-                          Change
-                        </button>
-                      </div>
-                    )}
-                    {(!spokenLanguage || showLanguagePicker) && (
-                      <label className="captions-field" htmlFor="captions-language">
-                        Language
-                        <select
-                          id="captions-language"
-                          value={language}
-                          disabled={isProcessing}
-                          onChange={(event) => setLanguage(event.target.value)}
-                        >
-                          {LANGUAGE_OPTIONS.map(([value, label]) => (
-                            <option key={value} value={value}>{label}</option>
-                          ))}
-                        </select>
-                      </label>
-                    )}
-                    <label className="captions-field" htmlFor="captions-model">
-                      Model
-                      <select
-                        id="captions-model"
-                        value={model}
-                        disabled={isProcessing}
-                        onChange={(event) => setModel(event.target.value)}
-                      >
-                        {MODEL_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value}>{option.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    {shouldWarnAboutLongVideo && (
-                      <p className="captions-warning" role="status">
-                        Long videos can be slow and use a lot of memory. Close other tabs.
-                      </p>
-                    )}
-                    {status === 'error' && (
-                      <div className="captions-error" role="alert">
-                        <p className="tool-error">{error}</p>
-                        {technicalDetails && (
-                          <details>
-                            <summary>Details</summary>
-                            <pre>{technicalDetails}</pre>
-                          </details>
-                        )}
-                      </div>
-                    )}
-                    <Button
-                      variant={captions.length > 0 ? 'outline' : 'primary'}
-                      className="captions-transcribe-button"
-                      disabled={isProcessing}
-                      onClick={() => runTranscription()}
-                    >
-                      {actionLabel}
-                    </Button>
-                      {status === 'error' && (
-                        <ProcessingRing
-                          stages={PROCESSING_STAGES}
-                          stageId={stageId}
-                          percent={progress?.percent ?? null}
-                          startedAt={startedAt}
-                          progressUpdatedAt={progressUpdatedAt}
-                          detail={progressDetail}
-                          failedStage={failedStage}
-                          onCancel={
-                            status === 'processing'
-                              ? () => abortControllerRef.current?.abort()
-                              : undefined
-                          }
-                        />
-                      )}
+                      <h2>Speech to captions</h2>
+                      {transcriptionForm}
                     </>
                   )}
                 </section>

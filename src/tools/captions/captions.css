@@ -75,11 +75,12 @@
   line-height: 1.5;
 }
 
+/* Preview on the left stays in view; each step's panel sits beside it. */
 .captions-editor-layout {
-  grid-template-columns: minmax(0, 1.2fr) minmax(310px, 0.88fr);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 1fr);
 }
 
-.captions-editor-layout .editor-controls {
+.captions-editor-layout .editor-preview-column {
   position: sticky;
   top: 16px;
 }
@@ -123,7 +124,7 @@
   position: relative;
   display: grid;
   max-width: 100%;
-  max-height: min(60vh, 520px);
+  max-height: min(50vh, 440px);
   flex: 0 1 auto;
   overflow: hidden;
   place-items: center;
@@ -159,8 +160,17 @@
   margin-top: 14px;
 }
 
-.captions-editor-panel {
-  min-height: 220px;
+.captions-redo > summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  color: #c9c1d2;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.captions-redo[open] > summary {
+  margin-bottom: 10px;
 }
 
 .captions-editor-panel .panel-heading {
@@ -169,7 +179,7 @@
 
 .captions-list {
   display: grid;
-  max-height: 620px;
+  max-height: min(52vh, 460px);
   gap: 10px;
   overflow: auto;
   margin: 0;
@@ -401,7 +411,7 @@
 
 .captions-settings-content {
   display: grid;
-  max-height: min(65vh, 610px);
+  max-height: min(52vh, 460px);
   gap: 13px;
   overflow-y: auto;
   margin-top: 14px;
@@ -1015,7 +1025,7 @@
     grid-template-columns: 1fr;
   }
 
-  .captions-editor-layout .editor-controls {
+  .captions-editor-layout .editor-preview-column {
     position: static;
   }
 }
