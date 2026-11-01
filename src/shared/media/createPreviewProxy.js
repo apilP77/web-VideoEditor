@@ -77,12 +77,12 @@ function convertWithMediabunny(file, { signal, onProgress }) {
  * Makes a small local preview, preferring Mediabunny and falling back to FFmpeg.
  *
  * @param {File} file Original local video.
- * @param {{width: number, height: number, signal?: AbortSignal, onProgress?: (percent: number) => void, preferFFmpeg?: boolean}} options Source dimensions, cancellation, progress, and decoder preference.
+ * @param {{width: number, height: number, signal?: AbortSignal, onProgress?: (percent: number) => void, preferFFmpeg?: boolean, waitBeforeFFmpeg?: () => Promise<unknown>}} options Source dimensions, cancellation, progress, decoder preference, and an optional wait so higher-priority FFmpeg work (such as audio extraction) runs first.
  * @returns {Promise<{blob: Blob, filename: string}>} H.264/AAC preview proxy.
  */
 export async function createPreviewProxy(
   file,
-  { width, height, signal, onProgress, preferFFmpeg = false } = {},
+  { width, height, signal, onProgress, preferFFmpeg = false, waitBeforeFFmpeg } = {},
 ) {
   if (typeof File === 'undefined' || !(file instanceof File)) {
     throw new TypeError('Choose a valid local video file.')
@@ -92,8 +92,13 @@ export async function createPreviewProxy(
   }
   if (signal?.aborted) throw createAbortError()
 
-  const ffmpeg = () =>
-    createPreviewProxyWithFFmpeg(file, width, height, { signal, onProgress })
+  const ffmpeg = async () => {
+    // FFmpeg runs one job at a time. Let the caller finish quick, urgent work
+    // first so a long preview encode does not hold it up.
+    await waitBeforeFFmpeg?.()?.catch?.(() => {})
+    if (signal?.aborted) throw createAbortError()
+    return createPreviewProxyWithFFmpeg(file, width, height, { signal, onProgress })
+  }
   const mediabunny = () => convertWithMediabunny(file, { signal, onProgress })
   let webCodecsError
   let ffmpegError

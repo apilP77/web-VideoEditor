@@ -337,6 +337,7 @@ function Captions({ tool }) {
   const previewFrameAvailableRef = useRef(false)
   const [file, setFile] = useState(null)
   const [flowStep, setFlowStep] = useState(1)
+  const audioReadyRef = useRef(null)
   const sourceUrl = useObjectUrl(file)
   const [previewProxyFile, setPreviewProxyFile] = useState(null)
   const previewProxyUrl = useObjectUrl(previewProxyFile)
@@ -486,6 +487,7 @@ function Captions({ tool }) {
         height: sourceHeight,
         signal: controller.signal,
         preferFFmpeg,
+        waitBeforeFFmpeg: () => audioReadyRef.current ?? Promise.resolve(),
         onProgress: (percent) => {
           if (
             controller.signal.aborted ||
@@ -1024,7 +1026,7 @@ function Captions({ tool }) {
     exportAbortControllerRef.current?.abort()
     const shouldRestore = restoredProject && lastProject?.fileName === selectedFile.name
     setFile(selectedFile)
-    setFlowStep(shouldRestore ? 3 : 1)
+    setFlowStep(shouldRestore ? 3 : 2)
     audioCacheRef.current = null
     setPreviewProxyFile(null)
     setMediaInfo(null)
@@ -1072,6 +1074,9 @@ function Captions({ tool }) {
       setCaptions([])
       setSpokenLanguage(null)
       setRestoredProject(false)
+      // Start captioning straight away; the original video stays in the
+      // preview while it works.
+      void runTranscription(selectedFile, { auto: true })
     }
   }
 
@@ -1161,8 +1166,16 @@ function Captions({ tool }) {
     setPreviewFrameVersion((version) => version + 1)
   }
 
-  async function runTranscription() {
-    if (!file || isProcessing) return
+  /**
+   * Transcribes the video into timed words and lays them out as captions.
+   *
+   * @param {File} [sourceFile] File to use; defaults to the selected file.
+   *   Passed explicitly right after upload, before state has updated.
+   * @param {{auto?: boolean}} [options] `auto` runs start on upload and move
+   *   to Style and export when they finish.
+   */
+  async function runTranscription(sourceFile = file, { auto = false } = {}) {
+    if (!(sourceFile instanceof File) || (!auto && isProcessing)) return
     const controller = new AbortController()
     abortControllerRef.current = controller
     const now = getMonotonicTime()
@@ -1178,6 +1191,15 @@ function Captions({ tool }) {
     setTechnicalDetails('')
     setFailedStage(null)
 
+    // Extract the audio while the model loads. It is quick, and starting it
+    // first keeps it ahead of any FFmpeg preview copy in the queue.
+    const cached = audioCacheRef.current?.file === sourceFile
+    const audioPromise = cached
+      ? Promise.resolve(audioCacheRef.current.samples)
+      : decodeAudio(sourceFile, { signal: controller.signal })
+    audioReadyRef.current = audioPromise
+    audioPromise.catch(() => {})
+
     try {
       const prepared = await prepareWhisperModel(model, {
         signal: controller.signal,
@@ -1187,25 +1209,9 @@ function Captions({ tool }) {
 
       updateProgress({ stage: 'loading-model', backend: prepared.backend, percent: 100 })
       updateProgress({ stage: 'reading-audio', backend: prepared.backend, percent: null })
-      let audio
-      if (audioCacheRef.current?.file === file) {
-        audio = audioCacheRef.current.samples
-        updateProgress({
-          stage: 'reading-audio',
-          backend: prepared.backend,
-          percent: 100,
-          detail: 'Using audio extracted earlier.',
-        })
-      } else {
-        audio = await decodeAudio(file, {
-          signal: controller.signal,
-          onProgress: updateProgress,
-        })
-        if (!controller.signal.aborted) {
-          audioCacheRef.current = { file, samples: audio }
-        }
-      }
+      const audio = await audioPromise
       if (controller.signal.aborted) return
+      if (!cached) audioCacheRef.current = { file: sourceFile, samples: audio }
       updateProgress({ stage: 'reading-audio', backend: prepared.backend, percent: 100 })
 
       const transcription = await transcribe(audio, {
@@ -1224,7 +1230,15 @@ function Captions({ tool }) {
       setSpokenLanguage(transcription.language)
       setRestoredProject(false)
       setStatus('done')
+      if (auto && nextCaptions.length > 0) {
+        // Land on Style and export so pace and style can be tried right away
+        // over the same preview. Respect a step the user picked meanwhile.
+        setFlowStep((current) => (current === 2 ? 3 : current))
+        setOpenPanel((current) => current ?? 'style')
+      }
     } catch (caughtError) {
+      // A newer run (for example after choosing another video) owns the UI.
+      if (abortControllerRef.current !== controller) return
       if (caughtError?.name === 'AbortError' || controller.signal.aborted) {
         setStatus(captions.length > 0 ? 'done' : 'idle')
       } else {
@@ -1239,6 +1253,7 @@ function Captions({ tool }) {
       }
     } finally {
       if (abortControllerRef.current === controller) abortControllerRef.current = null
+      if (audioReadyRef.current === audioPromise) audioReadyRef.current = null
     }
   }
 
@@ -2139,7 +2154,7 @@ function Captions({ tool }) {
                       variant={captions.length > 0 ? 'outline' : 'primary'}
                       className="captions-transcribe-button"
                       disabled={isProcessing}
-                      onClick={runTranscription}
+                      onClick={() => runTranscription()}
                     >
                       {actionLabel}
                     </Button>
