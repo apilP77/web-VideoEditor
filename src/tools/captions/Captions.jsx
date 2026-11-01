@@ -46,6 +46,7 @@ import {
   nudgeCaptionStart,
   splitCaption,
 } from '../../shared/captions/engine.js'
+import { canOpenCaptionStep } from '../../shared/captions/workflow.js'
 import {
   getCaptionExportFilename,
   getCaptionExportWords,
@@ -101,12 +102,17 @@ const LANGUAGE_OPTIONS = [
 ]
 const PROCESSING_STAGES = [
   { id: 'loading-model', label: 'Loading model', weight: 25 },
-  { id: 'reading-audio', label: 'Reading audio', weight: 15 },
+  { id: 'reading-audio', label: 'Reading your audio...', weight: 15 },
   { id: 'transcribing', label: 'Transcribing', weight: 55 },
   { id: 'finishing', label: 'Finishing', weight: 5 },
 ]
 const PREVIEW_PROXY_STAGES = [
   { id: 'preview-copy', label: 'Making preview copy', weight: 100 },
+]
+const CAPTION_FLOW_STEPS = [
+  { number: 1, label: 'Video' },
+  { number: 2, label: 'Words' },
+  { number: 3, label: 'Style and export' },
 ]
 const LANGUAGE_NAMES = Object.fromEntries(
   LANGUAGE_OPTIONS.filter(([value]) => value !== 'auto'),
@@ -151,6 +157,8 @@ const PREVIEW_CAPTION = {
 }
 const STYLE_STORAGE_KEY = 'web-video-toolkit-caption-style'
 const NUDGE_SECONDS = 0.05
+const PREVIEW_FALLBACK_MESSAGE =
+  "Your browser can't show this video's picture (likely HEVC). Captions can still be created from the audio. To preview and export, try Chrome with hardware HEVC support, or convert the video to H.264 MP4 first."
 
 function isVideoFile(file) {
   return file.type.startsWith('video/') ||
@@ -212,7 +220,7 @@ function formatProgressDetail(progress, duration) {
     return [file, amount, 'First run only; cached afterwards.'].filter(Boolean).join(' · ')
   }
   if (progress?.stage === 'reading-audio') {
-    return `Decoding audio · Length ${formatDuration(duration)}`
+    return `${progress.detail || 'Reading your audio...'} · Length ${formatDuration(duration)}`
   }
   if (progress?.stage === 'transcribing') {
     return `Chunk ${progress.chunk ?? 0} of ${progress.total ?? 0} · ${formatDuration(progress.coveredSeconds ?? 0)} of ${formatDuration(duration)}`
@@ -258,6 +266,7 @@ function Captions({ tool }) {
   const editorListRef = useRef(null)
   const abortControllerRef = useRef(null)
   const previewProxyAbortControllerRef = useRef(null)
+  const audioCacheRef = useRef(null)
   const exportAbortControllerRef = useRef(null)
   const progressRef = useRef(null)
   const activeCaptionRef = useRef(-1)
@@ -265,6 +274,7 @@ function Captions({ tool }) {
   const previewFrameTimerRef = useRef(null)
   const previewFrameCallbackRef = useRef(null)
   const [file, setFile] = useState(null)
+  const [flowStep, setFlowStep] = useState(1)
   const sourceUrl = useObjectUrl(file)
   const [previewProxyFile, setPreviewProxyFile] = useState(null)
   const previewProxyUrl = useObjectUrl(previewProxyFile)
@@ -274,6 +284,7 @@ function Captions({ tool }) {
   const [previewMaxWidth, setPreviewMaxWidth] = useState(640)
   const [previewProxyStatus, setPreviewProxyStatus] = useState('idle')
   const [previewProxyProgress, setPreviewProxyProgress] = useState(null)
+  const [previewStartedAt, setPreviewStartedAt] = useState(0)
   const [previewProxyError, setPreviewProxyError] = useState('')
   const [previewTechnicalDetails, setPreviewTechnicalDetails] = useState('')
   const [previewDiagnostics, setPreviewDiagnostics] = useState({
@@ -315,9 +326,28 @@ function Captions({ tool }) {
   const [exportStartedAt, setExportStartedAt] = useState(0)
   const [exportElapsed, setExportElapsed] = useState(0)
   const [exportFallbackReason, setExportFallbackReason] = useState('')
-  const isMakingPreview = previewProxyStatus === 'processing'
-  const isProcessing =
-    status === 'processing' || exportStatus === 'processing' || isMakingPreview
+  const exportResultFile = useMemo(
+    () =>
+      exportResult
+        ? new File([exportResult.blob], exportResult.filename, {
+            type: exportResult.blob.type || 'video/mp4',
+            lastModified: Date.now(),
+          })
+        : null,
+    [exportResult],
+  )
+  const exportResultUrl = useObjectUrl(exportResultFile)
+  const isProcessing = status === 'processing' || exportStatus === 'processing'
+  const hasCaptions = captions.length > 0
+  const sourceLongEdge = Math.max(mediaInfo?.width ?? 0, mediaInfo?.height ?? 0)
+  const previewUnavailable =
+    previewDiagnostics.frameAvailable !== true ||
+    (sourceLongEdge > 2000 && !previewProxyUrl)
+  const exportNeedsPreviewProxy = previewDiagnostics.frameAvailable === false
+  const exportWaitingForFrame = previewDiagnostics.frameAvailable !== true &&
+    previewDiagnostics.frameAvailable !== false
+  const exportUsesPreviewProxy =
+    exportNeedsPreviewProxy && Boolean(previewProxyFile)
   const previewSize = getPreviewSize(
     previewDimensions.width,
     previewDimensions.height,
@@ -342,7 +372,12 @@ function Captions({ tool }) {
     () => findCaptionReviewWords(captions, spokenLanguage),
     [captions, spokenLanguage],
   )
-  const requestPreviewCopy = useCallback(async (sourceFile, width, height) => {
+  const requestPreviewCopy = useCallback(async (
+    sourceFile,
+    width,
+    height,
+    preferFFmpeg = false,
+  ) => {
     if (!sourceFile || previewProxyRequestedRef.current === sourceFile || previewProxyFile) {
       return
     }
@@ -353,7 +388,7 @@ function Captions({ tool }) {
     const now = getMonotonicTime()
     setPreviewProxyStatus('processing')
     setPreviewProxyProgress(null)
-    setStartedAt(now)
+    setPreviewStartedAt(now)
     setProgressUpdatedAt(now)
     setPreviewProxyError('')
     setPreviewTechnicalDetails('')
@@ -374,31 +409,46 @@ function Captions({ tool }) {
         width: sourceWidth,
         height: sourceHeight,
         signal: controller.signal,
+        preferFFmpeg,
         onProgress: (percent) => {
+          if (
+            controller.signal.aborted ||
+            previewProxyAbortControllerRef.current !== controller
+          ) {
+            return
+          }
           setPreviewProxyProgress(Number.isFinite(percent) ? percent : null)
           setProgressUpdatedAt(getMonotonicTime())
         },
       })
       if (controller.signal.aborted) return
 
+      clearPreviewFrameWait(videoRef.current)
       setPreviewProxyFile(
         new File([output.blob], output.filename, {
           type: 'video/mp4',
           lastModified: Date.now(),
         }),
       )
+      setPreviewDiagnostics((current) => ({
+        ...current,
+        frameAvailable: null,
+      }))
       setPreviewProxyStatus('done')
       setPreviewProxyProgress(100)
     } catch (proxyError) {
+      const isCurrentRequest = previewProxyAbortControllerRef.current === controller
       if (proxyError?.name === 'AbortError' || controller.signal.aborted) {
-        previewProxyRequestedRef.current = null
-        setPreviewProxyStatus('idle')
+        if (isCurrentRequest) {
+          previewProxyRequestedRef.current = null
+          setPreviewProxyStatus('idle')
+        }
         return
       }
+      if (!isCurrentRequest) return
       console.error('Could not create a compatible video preview.', proxyError)
-      setPreviewProxyError(
-        "This browser cannot read this video's format. Try Chrome, or convert the video to H.264 MP4 first.",
-      )
+      previewProxyRequestedRef.current = null
+      setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
       setPreviewTechnicalDetails(
         proxyError?.technicalDetails ??
           (proxyError instanceof Error ? proxyError.message : String(proxyError)),
@@ -448,7 +498,10 @@ function Captions({ tool }) {
     }
   }, [])
 
-  useEffect(() => () => abortControllerRef.current?.abort(), [])
+  useEffect(() => () => {
+    abortControllerRef.current?.abort()
+    audioCacheRef.current = null
+  }, [])
   useEffect(() => () => previewProxyAbortControllerRef.current?.abort(), [])
   useEffect(() => () => exportAbortControllerRef.current?.abort(), [])
 
@@ -463,11 +516,6 @@ function Captions({ tool }) {
       video.cancelVideoFrameCallback(previewFrameCallbackRef.current)
     }
   }, [])
-
-  useEffect(() => {
-    if (!exportResult?.url) return undefined
-    return () => URL.revokeObjectURL(exportResult.url)
-  }, [exportResult])
 
   useEffect(() => {
     if (exportStatus !== 'processing') return undefined
@@ -516,9 +564,6 @@ function Captions({ tool }) {
             width: current.width || info.width || 0,
             height: current.height || info.height || 0,
           }))
-          if (shouldCreatePreviewProxy({ width: info.width, height: info.height })) {
-            void requestPreviewCopy(file, info.width, info.height)
-          }
         }
       })
       .catch((mediaError) => {
@@ -535,7 +580,7 @@ function Captions({ tool }) {
     return () => {
       active = false
     }
-  }, [file, requestPreviewCopy])
+  }, [file])
 
   useEffect(() => {
     if (!file || captions.length === 0 || isProcessing) return undefined
@@ -622,14 +667,67 @@ function Captions({ tool }) {
     })
   }, [activeCaptionIndex])
 
-  function markPreviewFrameAvailable() {
-    window.clearTimeout(previewFrameTimerRef.current)
-    previewFrameTimerRef.current = null
-    previewFrameCallbackRef.current = null
+  function isBlackVideoFrame(video) {
+    const canvas = document.createElement('canvas')
+    canvas.width = 32
+    canvas.height = 32
+    const context = canvas.getContext('2d', { willReadFrequently: true })
+    if (!context) return true
+    try {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height)
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+      for (let index = 0; index < pixels.length; index += 4) {
+        if (pixels[index] > 4 || pixels[index + 1] > 4 || pixels[index + 2] > 4) {
+          return false
+        }
+      }
+      return true
+    } catch (error) {
+      console.warn('Could not inspect the decoded preview frame.', error)
+      return true
+    }
+  }
+
+  function markPreviewFrameAvailable(video) {
+    clearPreviewFrameWait(video)
+    if (isBlackVideoFrame(video)) {
+      const canPlayType = file ? video.canPlayType(file.type) || 'no' : 'unknown'
+      console.warn('Captions preview produced a fully black frame.', {
+        errorCode: video.error?.code ?? null,
+        canPlayType,
+        fileType: file?.type || 'unknown',
+      })
+      const details = {
+        errorCode: video.error?.code ?? null,
+        canPlayType,
+        fileType: file?.type || 'unknown',
+        frame: 'fully black',
+      }
+      setPreviewDiagnostics((current) => ({
+        ...current,
+        errorCode: video.error?.code ?? current.errorCode,
+        errorMessage: video.error?.message || 'The decoded preview frame was fully black.',
+        canPlayType,
+        frameAvailable: false,
+      }))
+      if (!previewProxyFile && file) {
+        void requestPreviewCopy(
+          file,
+          mediaInfo?.width ?? video.videoWidth,
+          mediaInfo?.height ?? video.videoHeight,
+          true,
+        )
+      } else {
+        setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
+        setPreviewTechnicalDetails(JSON.stringify(details, null, 2))
+      }
+      return false
+    }
     setPreviewDiagnostics((current) => ({
       ...current,
       frameAvailable: true,
     }))
+    return true
   }
 
   function clearPreviewFrameWait(video) {
@@ -647,11 +745,12 @@ function Captions({ tool }) {
 
   function handleVideoMetadata(event) {
     const video = event.currentTarget
+    if (video.currentSrc !== previewUrl) return
     clearPreviewFrameWait(video)
     const width = video.videoWidth
     const height = video.videoHeight
     const activeFile = previewProxyFile ?? file
-    const canPlayType = file ? video.canPlayType(file.type) || 'no' : 'unknown'
+    const canPlayType = activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown'
     setPreviewDiagnostics((current) => ({
       ...current,
       canPlayType,
@@ -684,48 +783,74 @@ function Captions({ tool }) {
     }
     setPreviewFrameVersion((version) => version + 1)
 
-    if (previewProxyFile) return
     if (width === 0 || height === 0) {
+      if (previewProxyFile) {
+        setPreviewDiagnostics((current) => ({ ...current, frameAvailable: false }))
+        return
+      }
+      const details = {
+        errorCode: video.error?.code ?? null,
+        canPlayType,
+        fileType: activeFile?.type || 'unknown',
+      }
+      console.warn('Captions preview has no decodable picture dimensions.', details)
       void requestPreviewCopy(
-        activeFile,
+        file,
         mediaInfo?.width ?? width,
         mediaInfo?.height ?? height,
+        true,
       )
       return
     }
-    if (shouldCreatePreviewProxy({ width, height })) {
-      void requestPreviewCopy(activeFile, width, height)
-      return
+    if (!previewProxyFile && shouldCreatePreviewProxy({ width, height })) {
+      void requestPreviewCopy(file, width, height)
     }
 
-    const frameShown = () => markPreviewFrameAvailable()
+    const frameShown = () => {
+      if (video.currentSrc === previewUrl) markPreviewFrameAvailable(video)
+    }
     if (typeof video.requestVideoFrameCallback === 'function') {
       previewFrameCallbackRef.current = video.requestVideoFrameCallback(frameShown)
     }
     previewFrameTimerRef.current = window.setTimeout(() => {
+      if (video.currentSrc !== previewUrl) return
       if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
-        markPreviewFrameAvailable()
+        markPreviewFrameAvailable(video)
       } else {
         setPreviewDiagnostics((current) => ({
           ...current,
           frameAvailable: false,
         }))
-        void requestPreviewCopy(activeFile, width, height)
+        const details = {
+          errorCode: video.error?.code ?? null,
+          canPlayType,
+          fileType: activeFile?.type || 'unknown',
+        }
+        console.warn('Captions preview did not produce a frame within three seconds.', details)
+        if (previewProxyFile) {
+          setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
+          setPreviewTechnicalDetails(JSON.stringify(details, null, 2))
+        } else {
+          void requestPreviewCopy(file, width, height, true)
+        }
       }
     }, 3000)
   }
 
   function handleVideoError(event) {
     const video = event.currentTarget
+    if (video.currentSrc !== previewUrl) return
+    clearPreviewFrameWait(video)
     const mediaError = video.error
     const code = mediaError?.code ?? null
     const message = mediaError?.message || 'The browser could not decode a video frame.'
-    const canPlayType = file ? video.canPlayType(file.type) || 'no' : 'unknown'
+    const activeFile = previewProxyFile ?? file
+    const canPlayType = activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown'
     const details = {
       code,
       message,
       canPlayType,
-      fileType: file?.type || 'unknown',
+      fileType: activeFile?.type || 'unknown',
     }
     console.error('Captions preview video error.', details)
     setPreviewDiagnostics((current) => ({
@@ -735,20 +860,26 @@ function Captions({ tool }) {
       canPlayType,
       frameAvailable: false,
     }))
-    if (!previewProxyFile && file) {
+    if (previewProxyFile) {
+      setPreviewProxyError(PREVIEW_FALLBACK_MESSAGE)
+      setPreviewTechnicalDetails(JSON.stringify(details, null, 2))
+    } else if (file) {
       void requestPreviewCopy(
         file,
         mediaInfo?.width ?? video.videoWidth,
         mediaInfo?.height ?? video.videoHeight,
+        true,
       )
     }
   }
 
   function handlePreviewLoadedData() {
     const video = videoRef.current
+    if (video?.currentSrc !== previewUrl) return
     if (video?.videoWidth > 0 && video?.videoHeight > 0) {
-      markPreviewFrameAvailable()
+      if (markPreviewFrameAvailable(video)) {
       setPreviewFrameVersion((version) => version + 1)
+      }
     }
   }
 
@@ -762,6 +893,8 @@ function Captions({ tool }) {
     exportAbortControllerRef.current?.abort()
     const shouldRestore = restoredProject && lastProject?.fileName === selectedFile.name
     setFile(selectedFile)
+    setFlowStep(shouldRestore ? 3 : 1)
+    audioCacheRef.current = null
     setPreviewProxyFile(null)
     setMediaInfo(null)
     setPreviewDimensions({ width: 0, height: 0 })
@@ -812,6 +945,8 @@ function Captions({ tool }) {
     previewProxyAbortControllerRef.current?.abort()
     exportAbortControllerRef.current?.abort()
     setFile(null)
+    setFlowStep(1)
+    audioCacheRef.current = null
     setPreviewProxyFile(null)
     setMediaInfo(null)
     setPreviewDimensions({ width: 0, height: 0 })
@@ -920,10 +1055,24 @@ function Captions({ tool }) {
 
       updateProgress({ stage: 'loading-model', backend: prepared.backend, percent: 100 })
       updateProgress({ stage: 'reading-audio', backend: prepared.backend, percent: null })
-      const audio = await decodeAudio(previewProxyFile ?? file, {
-        signal: controller.signal,
-        onProgress: updateProgress,
-      })
+      let audio
+      if (audioCacheRef.current?.file === file) {
+        audio = audioCacheRef.current.samples
+        updateProgress({
+          stage: 'reading-audio',
+          backend: prepared.backend,
+          percent: 100,
+          detail: 'Using audio extracted earlier.',
+        })
+      } else {
+        audio = await decodeAudio(file, {
+          signal: controller.signal,
+          onProgress: updateProgress,
+        })
+        if (!controller.signal.aborted) {
+          audioCacheRef.current = { file, samples: audio }
+        }
+      }
       if (controller.signal.aborted) return
       updateProgress({ stage: 'reading-audio', backend: prepared.backend, percent: 100 })
 
@@ -963,6 +1112,8 @@ function Captions({ tool }) {
 
   async function runCaptionExport() {
     if (!file || captions.length === 0 || isProcessing) return
+    const exportFile = exportUsesPreviewProxy ? previewProxyFile : file
+    if (!exportFile) return
     const controller = new AbortController()
     exportAbortControllerRef.current = controller
     const started = getMonotonicTime()
@@ -979,7 +1130,7 @@ function Captions({ tool }) {
     setIsPlaying(false)
 
     try {
-      const output = await exportCaptionVideo(file, captions, style, {
+      const output = await exportCaptionVideo(exportFile, captions, style, {
         signal: controller.signal,
         hasAudio: mediaInfo?.hasAudio ?? 'unknown',
         onProgress: (nextProgress) => setExportProgress(nextProgress),
@@ -991,7 +1142,6 @@ function Captions({ tool }) {
       if (controller.signal.aborted) return
       setExportResult({
         ...output,
-        url: URL.createObjectURL(output.blob),
         aspectRatio: output.width / output.height,
         settingsSnapshot,
         duration: Number.isFinite(output.duration)
@@ -1097,9 +1247,9 @@ function Captions({ tool }) {
   }
 
   function downloadCaptionedVideo() {
-    if (!exportResult) return
+    if (!exportResult || !exportResultUrl) return
     const link = document.createElement('a')
-    link.href = exportResult.url
+    link.href = exportResultUrl
     link.download = exportResult.filename
     link.click()
   }
@@ -1155,6 +1305,31 @@ function Captions({ tool }) {
           </section>
         ) : (
           <>
+            <nav className="captions-stepper" aria-label="Caption workflow">
+              {CAPTION_FLOW_STEPS.map(({ number, label }) => {
+                const available = canOpenCaptionStep(number, hasCaptions)
+                return (
+                  <button
+                    key={number}
+                    type="button"
+                    className={[
+                      'captions-step',
+                      flowStep === number ? 'is-active' : '',
+                      available && flowStep !== number ? 'is-available' : '',
+                      hasCaptions && number < 3 ? 'is-complete' : '',
+                    ].filter(Boolean).join(' ')}
+                    aria-current={flowStep === number ? 'step' : undefined}
+                    aria-disabled={!available}
+                    onClick={() => {
+                      if (available) setFlowStep(number)
+                    }}
+                  >
+                    <span>{number}</span>
+                    {label}
+                  </button>
+                )
+              })}
+            </nav>
             <div className="editor-layout captions-editor-layout">
               <div className="editor-preview-column">
                 <section className="tool-panel captions-preview-panel" aria-label="Video preview">
@@ -1162,6 +1337,8 @@ function Captions({ tool }) {
                     <div>
                       <h2>Preview</h2>
                       <p>
+                        {file.name}
+                        {' · '}
                         {mediaInfo?.width && mediaInfo?.height
                           ? `${mediaInfo.width} × ${mediaInfo.height} · `
                           : ''}
@@ -1188,7 +1365,7 @@ function Captions({ tool }) {
                     >
                       <video
                         ref={videoRef}
-                        className="captions-video"
+                        className={`captions-video${previewUnavailable ? ' is-hidden' : ''}`}
                         src={previewUrl || undefined}
                         playsInline
                         preload="metadata"
@@ -1206,11 +1383,51 @@ function Captions({ tool }) {
                         onPause={() => setIsPlaying(false)}
                         onError={handleVideoError}
                       />
-                      <canvas
-                        ref={canvasRef}
-                        className="captions-overlay"
-                        aria-hidden="true"
-                      />
+                      {previewUnavailable && (
+                        <div className="captions-preview-poster" role="status">
+                          <strong>{file.name}</strong>
+                          <span>
+                            {mediaInfo?.width && mediaInfo?.height
+                              ? `${mediaInfo.width} × ${mediaInfo.height}`
+                              : 'Reading video details'}
+                          </span>
+                          <span>
+                            {previewProxyStatus === 'processing'
+                              ? `Making a preview copy, first time only for large files · ${formatElapsed(getMonotonicTime() - previewStartedAt)}`
+                              : previewProxyError ||
+                                (previewProxyUrl
+                                  ? 'Loading the preview copy...'
+                                  : previewDiagnostics.frameAvailable === false
+                                    ? 'The browser could not show the picture. Captions can still be created from the audio.'
+                                    : 'Checking whether this browser can show the picture...')}
+                          </span>
+                          {previewDiagnostics.frameAvailable === false &&
+                            previewProxyStatus !== 'processing' &&
+                            previewProxyStatus !== 'done' && (
+                            <Button
+                              variant="secondary"
+                              onClick={() =>
+                                requestPreviewCopy(
+                                  file,
+                                  mediaInfo?.width ?? 0,
+                                  mediaInfo?.height ?? 0,
+                                  true,
+                                )
+                              }
+                              disabled={!mediaInfo?.width || !mediaInfo?.height}
+                            >
+                              Make preview copy
+                            </Button>
+                          )}
+                        </div>
+                      )}
+                      {!previewUnavailable && (
+                        <canvas
+                          ref={canvasRef}
+                          className="captions-overlay"
+                          aria-hidden="true"
+                        />
+                      )}
                       {positionDragging && (
                         <div className="captions-safe-area" aria-hidden="true">
                           <span>Safe text area</span>
@@ -1228,9 +1445,9 @@ function Captions({ tool }) {
                       stages={PREVIEW_PROXY_STAGES}
                       stageId="preview-copy"
                       percent={previewProxyProgress}
-                      startedAt={startedAt}
+                      startedAt={previewStartedAt}
                       progressUpdatedAt={progressUpdatedAt}
-                      detail="Making a preview copy of this video... first time only for large files"
+                      detail="Making a preview copy, first time only for large files"
                       onCancel={() => previewProxyAbortControllerRef.current?.abort()}
                     />
                   )}
@@ -1289,12 +1506,13 @@ function Captions({ tool }) {
                     currentTime={currentTime}
                     duration={duration}
                     isPlaying={isPlaying}
-                    disabled={isProcessing || duration <= 0}
+                    disabled={isProcessing || previewUnavailable || duration <= 0}
                     onPlayPause={togglePlayback}
                     onSeek={seekVideo}
                   />
                 </section>
 
+                {flowStep === 2 && (
                 <section
                   className="tool-panel captions-editor-panel"
                   aria-labelledby="caption-list-heading"
@@ -1302,7 +1520,11 @@ function Captions({ tool }) {
                   <div className="panel-heading">
                     <div>
                       <h2 id="caption-list-heading">Caption editor</h2>
-                      <p>Edit wording and timing while keeping each caption in sync.</p>
+                      <p>
+                        {spokenLanguage
+                          ? `Spoken language: ${languageLabel}, detected`
+                          : 'Edit wording and timing while keeping each caption in sync.'}
+                      </p>
                     </div>
                     <span className="captions-count">{captions.length} total</span>
                   </div>
@@ -1419,10 +1641,43 @@ function Captions({ tool }) {
                       })}
                     </ol>
                   )}
+                  {captions.length > 0 && (
+                    <Button
+                      className="captions-next-step"
+                      disabled={isProcessing}
+                      onClick={() => setFlowStep(3)}
+                    >
+                      Looks good, style them
+                    </Button>
+                  )}
                 </section>
+                )}
               </div>
 
               <div className="editor-controls">
+                {flowStep === 1 && (
+                  <section className="tool-panel captions-locked-panel" aria-label="Locked caption tools">
+                    <h2>Style and export</h2>
+                    <div className="captions-panel-tabs" aria-label="Locked tools">
+                      <button type="button" disabled>Pace</button>
+                      <button type="button" disabled>Style</button>
+                      <button type="button" disabled>Export video</button>
+                    </div>
+                    <p>Create the words first to unlock Pace, Style, and Export.</p>
+                    <Button className="captions-next-step" onClick={() => setFlowStep(2)}>
+                      Continue to words
+                    </Button>
+                  </section>
+                )}
+                {flowStep === 3 && (
+                <>
+                <button
+                  type="button"
+                  className="captions-back-to-words"
+                  onClick={() => setFlowStep(2)}
+                >
+                  Back to words
+                </button>
                 <section className="tool-panel captions-settings-panel" aria-label="Caption settings">
                   <div className="captions-panel-tabs" role="group" aria-label="Caption settings panels">
                     <button
@@ -1647,8 +1902,11 @@ function Captions({ tool }) {
                     </div>
                   )}
                 </section>
+                </>
+                )}
 
-                <section className="tool-panel captions-transcription-panel" aria-label="Transcription">
+                {flowStep === 2 && (
+                <section className="tool-panel captions-transcription-panel" aria-label="Speech to captions">
                   <h2>Speech to captions</h2>
                   <p className="captions-model-note">
                     The selected model downloads on its first run and is cached on this device.
@@ -1736,6 +1994,15 @@ function Captions({ tool }) {
                       }
                     />
                   )}
+                </section>
+                )}
+                {flowStep === 3 && (
+                <section className="tool-panel captions-transcription-panel" aria-label="Export">
+                  {exportUsesPreviewProxy && (
+                    <p className="captions-warning" role="status">
+                      The browser cannot decode the original picture. Export will use the preview copy at 960 px long edge.
+                    </p>
+                  )}
                   {captions.length > 0 && (
                     <div className="captions-export-controls" aria-label="Captioned video export">
                       <p className="captions-export-description">
@@ -1757,7 +2024,12 @@ function Captions({ tool }) {
                           style={{
                             '--export-progress': `${Number.isFinite(exportProgress?.percent) ? exportProgress.percent : 0}%`,
                           }}
-                          disabled={isProcessing || !fontsReady}
+                          disabled={
+                            isProcessing ||
+                            !fontsReady ||
+                            exportWaitingForFrame ||
+                            (exportNeedsPreviewProxy && !previewProxyFile)
+                          }
                           onClick={runCaptionExport}
                         >
                           {exportStatus === 'processing'
@@ -1806,13 +2078,14 @@ function Captions({ tool }) {
                     </div>
                   )}
                 </section>
+                )}
               </div>
             </div>
-            {exportResult && (
+            {flowStep === 3 && exportResult && exportResultUrl && (
               <section className="captions-result-section" aria-label="Exported captioned video">
                 <ResultCard
                   cardRef={cardRef}
-                  result={exportResult}
+                  result={{ ...exportResult, url: exportResultUrl }}
                   duration={formatDuration(exportResult.duration)}
                   resolution={`${exportResult.width} × ${exportResult.height}`}
                   processedWith={exportResult.processedWith}

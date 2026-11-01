@@ -77,12 +77,12 @@ function convertWithMediabunny(file, { signal, onProgress }) {
  * Makes a small local preview, preferring Mediabunny and falling back to FFmpeg.
  *
  * @param {File} file Original local video.
- * @param {{width: number, height: number, signal?: AbortSignal, onProgress?: (percent: number) => void}} options Source dimensions, cancellation, and progress.
+ * @param {{width: number, height: number, signal?: AbortSignal, onProgress?: (percent: number) => void, preferFFmpeg?: boolean}} options Source dimensions, cancellation, progress, and decoder preference.
  * @returns {Promise<{blob: Blob, filename: string}>} H.264/AAC preview proxy.
  */
 export async function createPreviewProxy(
   file,
-  { width, height, signal, onProgress } = {},
+  { width, height, signal, onProgress, preferFFmpeg = false } = {},
 ) {
   if (typeof File === 'undefined' || !(file instanceof File)) {
     throw new TypeError('Choose a valid local video file.')
@@ -92,33 +92,50 @@ export async function createPreviewProxy(
   }
   if (signal?.aborted) throw createAbortError()
 
+  const ffmpeg = () =>
+    createPreviewProxyWithFFmpeg(file, width, height, { signal, onProgress })
+  const mediabunny = () => convertWithMediabunny(file, { signal, onProgress })
   let webCodecsError
-  try {
-    return await convertWithMediabunny(file, { signal, onProgress })
-  } catch (error) {
-    if (error?.name === 'AbortError' || signal?.aborted) throw createAbortError()
-    webCodecsError = error
-    console.warn('Mediabunny preview generation failed; trying FFmpeg.', error)
+  let ffmpegError
+
+  if (preferFFmpeg) {
+    try {
+      return await ffmpeg()
+    } catch (error) {
+      if (error?.name === 'AbortError' || signal?.aborted) throw createAbortError()
+      ffmpegError = error
+      console.warn('FFmpeg preview generation failed; trying browser decoding.', error)
+    }
+    try {
+      return await mediabunny()
+    } catch (error) {
+      if (error?.name === 'AbortError' || signal?.aborted) throw createAbortError()
+      webCodecsError = error
+    }
+  } else {
+    try {
+      return await mediabunny()
+    } catch (error) {
+      if (error?.name === 'AbortError' || signal?.aborted) throw createAbortError()
+      webCodecsError = error
+      console.warn('Mediabunny preview generation failed; trying FFmpeg.', error)
+    }
+    try {
+      return await ffmpeg()
+    } catch (error) {
+      if (error?.name === 'AbortError' || signal?.aborted) throw createAbortError()
+      ffmpegError = error
+    }
   }
 
-  try {
-    return await createPreviewProxyWithFFmpeg(file, width, height, {
-      signal,
-      onProgress,
-    })
-  } catch (ffmpegError) {
-    if (ffmpegError?.name === 'AbortError' || signal?.aborted) {
-      throw createAbortError()
-    }
-    const error = new Error(
-      "This browser cannot read this video's format. Try Chrome, or convert the video to H.264 MP4 first.",
-      { cause: ffmpegError },
-    )
-    error.technicalDetails = [
-      `Mediabunny: ${webCodecsError?.message ?? String(webCodecsError)}`,
-      `FFmpeg: ${ffmpegError instanceof Error ? ffmpegError.message : String(ffmpegError)}`,
-    ].join('\n')
-    console.error('Both preview-copy methods failed.', error.technicalDetails)
-    throw error
-  }
+  const error = new Error(
+    "Your browser can't show this video's picture (likely HEVC). Captions can still be created from the audio. To preview and export, try Chrome with hardware HEVC support, or convert the video to H.264 MP4 first.",
+    { cause: ffmpegError ?? webCodecsError },
+  )
+  error.technicalDetails = [
+    `Mediabunny: ${webCodecsError?.message ?? 'not attempted'}`,
+    `FFmpeg: ${ffmpegError instanceof Error ? ffmpegError.message : String(ffmpegError)}`,
+  ].join('\n')
+  console.error('Both preview-copy methods failed.', error.technicalDetails)
+  throw error
 }

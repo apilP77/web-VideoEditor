@@ -160,6 +160,7 @@ export function buildPreviewProxyArgs(inputPath, outputPath, width, height) {
   return [
     '-i', inputPath,
     '-vf', `scale=${scale}`,
+    '-r', '24',
     '-map', '0:v:0',
     '-map', '0:a?',
     '-c:v', 'libx264',

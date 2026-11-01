@@ -65,7 +65,7 @@ const LANGUAGE_OPTIONS = [
 const LONG_AUDIO_SECONDS = 10 * 60
 const TRANSCRIPTION_STAGES = [
   { id: 'loading-model', label: 'Loading model', weight: 25 },
-  { id: 'reading-audio', label: 'Reading audio', weight: 15 },
+  { id: 'reading-audio', label: 'Reading your audio...', weight: 15 },
   { id: 'transcribing', label: 'Transcribing', weight: 55 },
   { id: 'finishing', label: 'Finishing', weight: 5 },
 ]
@@ -142,7 +142,7 @@ function getProgressDetail(progress, mediaInfo) {
     ].filter(Boolean).join(' · ')
   }
   if (progress?.stage === 'reading-audio') {
-    return `Decoding audio · Length ${formatDuration(mediaInfo?.duration ?? 0)}`
+    return `${progress.detail || 'Reading your audio...'} · Length ${formatDuration(mediaInfo?.duration ?? 0)}`
   }
   if (progress?.stage === 'transcribing') {
     return `Chunk ${progress.chunk ?? 0} of ${progress.total ?? 0} · ${formatDuration(progress.coveredSeconds ?? 0)} of ${formatDuration(mediaInfo?.duration ?? 0)}`
@@ -174,6 +174,7 @@ function Transcript({ tool }) {
   const abortControllerRef = useRef(null)
   const progressRef = useRef(null)
   const lastDownloadRef = useRef(null)
+  const audioCacheRef = useRef(null)
   const [file, setFile] = useState(null)
   const sourceUrl = useObjectUrl(file)
   const [mediaInfo, setMediaInfo] = useState(null)
@@ -219,7 +220,10 @@ function Transcript({ tool }) {
     Boolean(mediaInfo?.hasVideo) &&
     ((mediaInfo.duration ?? 0) > 3 * 60 || (file?.size ?? 0) > 500 * 1024 * 1024)
 
-  useEffect(() => () => abortControllerRef.current?.abort(), [])
+  useEffect(() => () => {
+    abortControllerRef.current?.abort()
+    audioCacheRef.current = null
+  }, [])
 
   useEffect(() => {
     let active = true
@@ -286,6 +290,7 @@ function Transcript({ tool }) {
 
     abortControllerRef.current?.abort()
     setFile(selectedFile)
+    audioCacheRef.current = null
     setMediaInfo(null)
     setResult(null)
     setProgress(null)
@@ -305,6 +310,7 @@ function Transcript({ tool }) {
   function startOver() {
     abortControllerRef.current?.abort()
     setFile(null)
+    audioCacheRef.current = null
     setMediaInfo(null)
     setResult(null)
     setProgress(null)
@@ -418,10 +424,24 @@ function Transcript({ tool }) {
         backend: preparedModel.backend,
         percent: null,
       })
-      const audio = await decodeAudio(file, {
-        signal: controller.signal,
-        onProgress: updateProgress,
-      })
+      let audio
+      if (audioCacheRef.current?.file === file) {
+        audio = audioCacheRef.current.samples
+        updateProgress({
+          stage: 'reading-audio',
+          backend: preparedModel.backend,
+          percent: 100,
+          detail: 'Using audio extracted earlier.',
+        })
+      } else {
+        audio = await decodeAudio(file, {
+          signal: controller.signal,
+          onProgress: updateProgress,
+        })
+        if (!controller.signal.aborted) {
+          audioCacheRef.current = { file, samples: audio }
+        }
+      }
       if (controller.signal.aborted) return
       updateProgress({
         stage: 'reading-audio',

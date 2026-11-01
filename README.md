@@ -110,16 +110,31 @@ with WebCodecs as H.264 video and AAC audio while retaining the source audio.
 The worker loads the same bundled caption fonts before drawing. Mediabunny
 reports conversion progress and can cancel the active conversion.
 
+The Captions generator uses a three-step flow: choose a video, create and edit
+timed words, then style and export. Pace, style, and export stay locked until
+the transcript is ready; moving back to Words preserves edits.
+
+Video audio extraction does not depend on the picture. Captions and Transcript
+use FFmpeg.wasm by default to extract `-vn` 16 kHz mono PCM WAV, so an
+undecodable HEVC video track is never passed through browser video decoding
+for transcription. Small audio-only files can use browser decoding as a fast
+path. Decoded samples stay in memory for transcription retries and are released
+when the selected file is changed or cleared.
+
 The Captions preview checks browser video dimensions, codec, `canPlayType`,
-decode errors, and whether a frame arrives. Videos with a long edge above
-2000 pixels, or a source with no decodable preview frame, get a local preview
-copy encoded as 960-pixel H.264/AAC. It prefers Mediabunny and WebCodecs, then
-falls back to FFmpeg.wasm. The proxy is used only for preview and audio
-transcription; caption export continues to use the original file. This keeps
-4K and HEVC sources from requiring a full-size preview decode when the browser
-cannot display them directly. If neither local conversion path can read the
-source, the tool explains that an H.264 MP4 conversion or a different browser
-may be needed.
+decode errors, whether a frame arrives, and whether the rendered frame is
+fully black. A 4K source or an undecodable picture gets a small local preview
+copy encoded at 960 pixels on its long edge and 24 fps. When the browser can
+decode the source, Mediabunny and WebCodecs scale it; when it cannot, the app
+tries FFmpeg.wasm first. While conversion runs, the preview shows a poster
+card instead of an unexplained black frame. The proxy is only needed for
+preview and is never used for transcription. Export uses the original file
+when its picture decodes in the browser; otherwise it uses the preview copy
+and warns that the output resolution is limited to the proxy.
+
+If neither local conversion path can read the source, the tool explains that
+the audio can still be captioned but preview and video export need a browser
+with hardware HEVC support or an H.264 MP4 conversion.
 
 If WebCodecs or the fast encoder fails, the tool records a canvas and the
 source audio with MediaRecorder as WebM. This fallback plays through the
@@ -164,7 +179,7 @@ vercel.json / netlify.toml # COOP/COEP headers
 
 ### Lightweight transcription (chunking)
 1. Accept a video or audio file. Audio-only input keeps transcription available when a video's picture cannot be played by the browser.
-2. Detect long silent regions and decode audio to 16 kHz mono samples; use FFmpeg WAV extraction when browser decoding fails.
+2. Detect long silent regions and decode audio to 16 kHz mono samples; video always uses FFmpeg `-vn` WAV extraction so picture decoding is not required.
 3. Whisper uses automatic language detection by default, with a manual language override.
 4. Choose Whisper tiny (~60-200 MB), base (~110-360 MB), or small (~300 MB-1 GB). Approximate downloads vary by browser backend.
 5. Split audio into ~30 s chunks with ~1 s overlap so words aren't cut in half.

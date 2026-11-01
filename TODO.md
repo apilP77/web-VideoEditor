@@ -108,6 +108,9 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Export edited captions as `.srt`, `.vtt`, and `.txt`
 - [x] Keep preview object URLs safe and preserve valid media duration metadata
 - [x] Diagnose preview decoding and make 960px H.264/AAC proxies for large or unsupported videos
+- [x] Organize Captions as Video, Words, and Style and export steps
+- [x] Extract audio with FFmpeg independently of the video picture and cache samples for retries
+- [x] Show a poster preview during proxy conversion and export from the proxy only when the original picture is undecodable
 
 ## Phase 9: Shared batch system
 - [ ] Build one reusable batch runner that every tool can plug into

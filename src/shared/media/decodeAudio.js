@@ -1,7 +1,5 @@
-import {
-  extractAudio,
-  extractAudioFromBuffer,
-} from '../ffmpeg/ffmpegClient.js'
+import { extractAudio, extractAudioFromBuffer } from '../ffmpeg/ffmpegClient.js'
+import { chooseAudioDecodePath } from './audioPath.js'
 
 const TARGET_SAMPLE_RATE = 16_000
 
@@ -57,8 +55,25 @@ async function decodeBlob(blob, signal) {
   }
 }
 
+async function extractAndDecode(file, { signal, onProgress }, fileData) {
+  const reportProgress = (percent) =>
+    onProgress?.({
+      stage: 'reading-audio',
+      percent: Number.isFinite(percent) ? percent : null,
+      detail: 'Extracting 16 kHz mono audio without decoding the video picture.',
+    })
+  const output = fileData
+    ? await extractAudioFromBuffer(file, fileData, {
+        signal,
+        onProgress: reportProgress,
+      })
+    : await extractAudio(file, { signal, onProgress: reportProgress })
+  if (signal?.aborted) throw createAbortError()
+  return decodeBlob(output.blob, signal)
+}
+
 /**
- * Decodes local audio or video to 16 kHz mono samples, using FFmpeg if needed.
+ * Decodes local media to 16 kHz mono samples without decoding video tracks.
  *
  * @param {File} file Local audio or video file.
  * @param {{signal?: AbortSignal, onProgress?: (progress: {stage: string, percent: number | null, detail?: string}) => void}} options Cancellation and progress reporting.
@@ -70,21 +85,26 @@ export async function decodeAudio(file, { signal, onProgress } = {}) {
   }
   if (signal?.aborted) throw createAbortError()
 
-  const AudioContextConstructor = getAudioContextConstructor()
-  if (!AudioContextConstructor) {
-    throw new Error('This browser does not support audio decoding.')
-  }
-
   onProgress?.({
     stage: 'reading-audio',
     percent: null,
-    detail: 'Reading audio from this device.',
+    detail: 'Reading your audio...',
   })
 
-  const context = new AudioContextConstructor()
+  if (chooseAudioDecodePath(file) === 'ffmpeg') {
+    return extractAndDecode(file, { signal, onProgress })
+  }
+
+  const AudioContextConstructor = getAudioContextConstructor()
+  if (!AudioContextConstructor) {
+    return extractAndDecode(file, { signal, onProgress })
+  }
+
+  let context
   let encodedData
   let decodeError
   try {
+    context = new AudioContextConstructor()
     encodedData = await file.arrayBuffer()
     const decoded = await decodeBuffer(context, encodedData)
     return await toMono16k(decoded, signal)
@@ -94,30 +114,11 @@ export async function decodeAudio(file, { signal, onProgress } = {}) {
     }
     decodeError = error
   } finally {
-    if (context.state !== 'closed') await context.close()
+    if (context && context.state !== 'closed') await context.close()
   }
 
-  onProgress?.({
-    stage: 'reading-audio',
-    percent: null,
-    detail: 'Using the compatible audio decoder.',
-  })
-
   try {
-    const fallbackOptions = {
-      signal,
-      onProgress: (percent) =>
-        onProgress?.({
-          stage: 'reading-audio',
-          percent: Number.isFinite(percent) ? percent : null,
-          detail: 'Converting audio locally.',
-        }),
-    }
-    const extracted = encodedData?.byteLength
-      ? await extractAudioFromBuffer(file, encodedData, fallbackOptions)
-      : await extractAudio(file, fallbackOptions)
-    if (signal?.aborted) throw createAbortError()
-    return await decodeBlob(extracted.blob, signal)
+    return await extractAndDecode(file, { signal, onProgress }, encodedData)
   } catch (fallbackError) {
     if (fallbackError?.name === 'AbortError' || signal?.aborted) {
       throw createAbortError()

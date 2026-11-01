@@ -172,6 +172,7 @@ describe('buildPreviewProxyArgs', () => {
     expect(buildPreviewProxyArgs('in.mp4', 'out.mp4', 2160, 3840)).toEqual([
       '-i', 'in.mp4',
       '-vf', 'scale=-2:960',
+      '-r', '24',
       '-map', '0:v:0',
       '-map', '0:a?',
       '-c:v', 'libx264',
