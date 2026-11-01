@@ -1,25 +1,3 @@
-.speed-preview-frame {
-  display: grid;
-  width: 100%;
-  height: auto;
-  min-height: 180px;
-  overflow: hidden;
-  place-items: center;
-  border: 1px solid #302b3b;
-  border-radius: 12px;
-  background: #09080c;
-}
-
-.speed-source-video {
-  display: block;
-  width: auto;
-  height: auto;
-  max-width: 100%;
-  max-height: min(60vh, 520px);
-  background: #09080c;
-  object-fit: contain;
-}
-
 .speed-editor-layout .editor-controls {
   position: sticky;
   top: 16px;

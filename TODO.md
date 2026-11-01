@@ -107,10 +107,10 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Export MP4 with burned-in captions using Mediabunny and WebCodecs, with real-time WebM fallback
 - [x] Export edited captions as `.srt`, `.vtt`, and `.txt`
 - [x] Keep preview object URLs safe and preserve valid media duration metadata
-- [x] Diagnose preview decoding and make 960px H.264/AAC proxies for large or unsupported videos
+- [x] Make an optional 960px H.264/AAC preview copy when no decoded frame arrives
 - [x] Organize Captions as Video, Words, and Style and export steps
 - [x] Extract audio with FFmpeg independently of the video picture and cache samples for retries
-- [x] Show a poster preview during proxy conversion and export from the proxy only when the original picture is undecodable
+- [x] Keep the source video visible while checking frames and building an optional preview copy
 
 ## Phase 9: Shared batch system
 - [ ] Build one reusable batch runner that every tool can plug into
@@ -136,6 +136,7 @@ Legend: `[ ]` todo, `[x]` done
 - [ ] Keyboard accessibility and focus states
 - [ ] Responsive layout check (desktop, tablet, mobile)
 - [x] Use a shared tool-page layout and reusable video preview controls
+- [x] Share the always-visible video preview across Speed, Crop and trim, and Captions
 - [x] Add shared circular progress rings for staged tool processing
 - [x] Center the upload step and use a consistent responsive tool layout
 - [ ] Browser testing: Chrome, Edge, Firefox, Safari

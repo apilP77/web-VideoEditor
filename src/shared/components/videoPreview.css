@@ -1,0 +1,28 @@
+.video-preview-frame {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: auto;
+  min-height: 180px;
+  overflow: hidden;
+  place-items: center;
+  border: 1px solid #302b3b;
+  border-radius: 12px;
+  background: #09080c;
+}
+
+.video-preview-video {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: min(60vh, 520px);
+  background: #09080c;
+  object-fit: contain;
+}
+
+.video-preview-video.video-preview-video-fill {
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+}

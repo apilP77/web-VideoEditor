@@ -6,6 +6,7 @@ import ResultCard from '../../shared/components/ResultCard.jsx'
 import ToolLayout from '../../shared/components/ToolLayout.jsx'
 import UploadBox from '../../shared/components/UploadBox.jsx'
 import VideoPlayerControls from '../../shared/components/VideoPlayerControls.jsx'
+import VideoPreview from '../../shared/components/VideoPreview.jsx'
 import { useResultCardAttention } from '../../shared/hooks/useResultCardAttention.js'
 import { isVideoFile } from '../../shared/utils/mediaFiles.js'
 import { getMonotonicTime } from '../../shared/utils/timing.js'
@@ -290,29 +291,28 @@ function Speed({ tool }) {
                     </div>
                   </div>
 
-                  <div className="speed-preview-frame">
-                    <video
-                      ref={videoRef}
-                      className="speed-source-video"
-                      src={sourceUrl || undefined}
-                      playsInline
-                      preload="metadata"
-                      onLoadedMetadata={handleMetadata}
-                      onError={handlePreviewError}
-                      onTimeUpdate={() => {
+                  <VideoPreview
+                    videoRef={videoRef}
+                    src={sourceUrl}
+                    videoProps={{
+                      playsInline: true,
+                      preload: 'metadata',
+                      onLoadedMetadata: handleMetadata,
+                      onError: handlePreviewError,
+                      onTimeUpdate: () => {
                         if (videoRef.current) {
                           setCurrentTime(videoRef.current.currentTime)
                         }
-                      }}
-                      onPlay={() => setIsPlaying(true)}
-                      onPause={() => setIsPlaying(false)}
-                      style={{
-                        aspectRatio: hasMetadata
-                          ? `${videoSize.width} / ${videoSize.height}`
-                          : '16 / 9',
-                      }}
-                    />
-                  </div>
+                      },
+                      onPlay: () => setIsPlaying(true),
+                      onPause: () => setIsPlaying(false),
+                    }}
+                    videoStyle={{
+                      aspectRatio: hasMetadata
+                        ? `${videoSize.width} / ${videoSize.height}`
+                        : '16 / 9',
+                    }}
+                  />
 
                   <VideoPlayerControls
                     currentTime={currentTime}

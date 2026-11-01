@@ -9,6 +9,7 @@ import ProcessingRing from '../../shared/components/ProcessingRing'
 import ResultCard from '../../shared/components/ResultCard'
 import ToolLayout from '../../shared/components/ToolLayout'
 import VideoPlayerControls from '../../shared/components/VideoPlayerControls'
+import VideoPreview from '../../shared/components/VideoPreview'
 import UploadBox from '../../shared/components/UploadBox'
 import { useResultCardAttention } from '../../shared/hooks/useResultCardAttention'
 import {
@@ -482,19 +483,6 @@ function CropTrim({ tool }) {
         </section>
       ) : (
         <>
-          {!hasMetadata && !metadataError && (
-            <video
-              ref={videoRef}
-              className="metadata-loader"
-              src={sourceUrl || undefined}
-              preload="metadata"
-              playsInline
-              onLoadedMetadata={handleMetadata}
-              onError={() => handleMetadataError(
-                'Could not read this video. Try a supported video file.',
-              )}
-            />
-          )}
           {metadataError ? (
             <section className="tool-panel" aria-live="polite">
               <p className="tool-error" role="alert">{metadataError}</p>
@@ -504,7 +492,6 @@ function CropTrim({ tool }) {
             </section>
           ) : (
             <>
-              {hasMetadata && (
                 <div className="editor-layout">
                   <section className="tool-panel preview-panel" aria-label="Video preview">
                     <div className="panel-heading">
@@ -516,27 +503,33 @@ function CropTrim({ tool }) {
                       </div>
                     </div>
 
-                    <div
-                      ref={previewRef}
-                      className="preview-frame"
-                      style={{ aspectRatio: `${videoSize.width} / ${videoSize.height}` }}
-                      onPointerMove={handleCropPointerMove}
-                      onPointerUp={endCropPointer}
-                      onPointerCancel={endCropPointer}
-                    >
-                      <video
-                        ref={videoRef}
-                        className="source-video"
-                        src={sourceUrl || undefined}
-                        playsInline
-                        onLoadedMetadata={handleMetadata}
-                        onError={() => handleMetadataError(
+                    <VideoPreview
+                      videoRef={videoRef}
+                      src={sourceUrl}
+                      frameClassName="preview-frame"
+                      videoClassName="video-preview-video-fill source-video"
+                      frameRef={previewRef}
+                      frameStyle={{
+                        aspectRatio: hasMetadata
+                          ? `${videoSize.width} / ${videoSize.height}`
+                          : '16 / 9',
+                      }}
+                      frameProps={{
+                        onPointerMove: handleCropPointerMove,
+                        onPointerUp: endCropPointer,
+                        onPointerCancel: endCropPointer,
+                      }}
+                      videoProps={{
+                        playsInline: true,
+                        onLoadedMetadata: handleMetadata,
+                        onError: () => handleMetadataError(
                           'Could not read this video. Try a supported video file.',
-                        )}
-                        onTimeUpdate={handleTimeUpdate}
-                        onPlay={handlePlay}
-                        onPause={() => setIsPlaying(false)}
-                      />
+                        ),
+                        onTimeUpdate: handleTimeUpdate,
+                        onPlay: handlePlay,
+                        onPause: () => setIsPlaying(false),
+                      }}
+                    >
                       {displayedCrop && (
                         <>
                           <div
@@ -593,7 +586,7 @@ function CropTrim({ tool }) {
                           </div>
                         </>
                       )}
-                    </div>
+                    </VideoPreview>
 
                     <VideoPlayerControls
                       currentTime={currentTime}
@@ -739,7 +732,6 @@ function CropTrim({ tool }) {
                     </section>
                   </div>
                 </div>
-              )}
 
               {!hasMetadata && !metadataError && (
                 <p className="loading-message" role="status">Reading video dimensions and duration…</p>
