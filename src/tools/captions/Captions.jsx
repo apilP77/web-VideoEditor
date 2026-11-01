@@ -1693,6 +1693,13 @@ function Captions({ tool }) {
                       The browser cannot decode the original picture. Export will use the preview copy at 960 px long edge.
                     </p>
                   )}
+                  {exportNeedsPreviewProxy && !preview.previewFile && (
+                    <p className="captions-warning" role="status">
+                      {preview.status === 'converting'
+                        ? 'This browser cannot decode the original picture, so export uses the preview copy. Export unlocks when the copy shown on the preview is ready.'
+                        : 'This browser cannot decode the original picture and no preview copy could be made, so the video cannot be exported here. Convert it to a 1080p H.264 MP4 and try again.'}
+                    </p>
+                  )}
                   {captions.length > 0 && (
                     <div className="captions-export-controls" aria-label="Captioned video export">
                       <p className="captions-export-description">
