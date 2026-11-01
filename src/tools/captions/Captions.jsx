@@ -1231,6 +1231,7 @@ function Captions({ tool }) {
                           status={preview.status}
                           progress={preview.progress}
                           startedAt={preview.conversionStartedAt}
+                          progressUpdatedAt={preview.progressUpdatedAt}
                           message={preview.message}
                           technicalDetails={preview.technicalDetails}
                           note="Captions are made from the audio, so they keep working while the picture is unavailable."

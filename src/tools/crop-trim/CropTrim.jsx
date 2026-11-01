@@ -633,6 +633,7 @@ function CropTrim({ tool }) {
                           status={preview.status}
                           progress={preview.progress}
                           startedAt={preview.conversionStartedAt}
+                          progressUpdatedAt={preview.progressUpdatedAt}
                           message={preview.message}
                           technicalDetails={preview.technicalDetails}
                           note="You can still trim, pick a crop aspect ratio and export. The original file is used."

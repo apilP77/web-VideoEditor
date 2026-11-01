@@ -1,5 +1,6 @@
 import { getJobsToPreempt } from './jobPriority.js'
 import { debugLog } from '../utils/debugLog.js'
+import { EXPORT_MEMORY_MESSAGE, isOutOfMemoryError } from '../media/memoryErrors.js'
 
 let worker
 let nextRequestId = 1
@@ -75,6 +76,10 @@ function handleWorkerMessage(event) {
     ).split('\n\nFFmpeg log:\n')
     const error = new Error(summary)
     if (log) error.technicalDetails = `FFmpeg log:\n${log}`
+    if (isOutOfMemoryError(error)) {
+      error.technicalDetails = [summary, error.technicalDetails].filter(Boolean).join('\n\n')
+      error.message = EXPORT_MEMORY_MESSAGE
+    }
     job.reject(error)
     return
   }
@@ -108,7 +113,7 @@ function failPendingJobs(message) {
 function handleWorkerError(event) {
   event.preventDefault()
   failPendingJobs(
-    'The FFmpeg worker stopped unexpectedly. Start a new operation to restart it.',
+    'The video engine stopped unexpectedly. With large videos this usually means the device ran out of memory. Close other tabs and try again, or convert the video to a 1080p H.264 MP4 first.',
   )
 }
 

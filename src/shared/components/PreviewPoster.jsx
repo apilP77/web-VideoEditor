@@ -9,14 +9,16 @@ function formatElapsed(milliseconds) {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-function useElapsed(startedAt, running) {
+const STALL_MS = 60_000
+
+function useNow(running) {
   const [now, setNow] = useState(() => getMonotonicTime())
   useEffect(() => {
     if (!running) return undefined
     const timer = window.setInterval(() => setNow(getMonotonicTime()), 1000)
     return () => window.clearInterval(timer)
   }, [running])
-  return running && startedAt ? now - startedAt : 0
+  return now
 }
 
 /**
@@ -24,7 +26,7 @@ function useElapsed(startedAt, running) {
  * instead of a bare black frame. Explains why, shows preview-copy progress,
  * and reassures that the original file is still used.
  *
- * @param {{fileName: string, codec?: string | null, status: string, progress?: number | null, startedAt?: number, message?: string, technicalDetails?: string, note?: string, onCancel?: () => void}} props
+ * @param {{fileName: string, codec?: string | null, status: string, progress?: number | null, startedAt?: number, progressUpdatedAt?: number, message?: string, technicalDetails?: string, note?: string, onCancel?: () => void}} props
  *   Preview fallback state from usePreviewFallback, plus a tool-specific note.
  * @returns {import('react').JSX.Element} Poster card overlay.
  */
@@ -34,6 +36,7 @@ function PreviewPoster({
   status,
   progress = null,
   startedAt = 0,
+  progressUpdatedAt = 0,
   message,
   technicalDetails,
   note,
@@ -41,7 +44,12 @@ function PreviewPoster({
 }) {
   const converting = status === 'converting'
   const unavailable = status === 'failed' || status === 'unavailable'
-  const elapsed = useElapsed(startedAt, converting)
+  const now = useNow(converting)
+  const elapsed = converting && startedAt ? now - startedAt : 0
+  // FFmpeg may report nothing for a long time on big HEVC files; say so
+  // rather than leaving a progress bar that looks frozen.
+  const stalled =
+    converting && startedAt > 0 && now - Math.max(startedAt, progressUpdatedAt) > STALL_MS
   const codecLabel = describeCodec(codec)
   const title = converting
     ? 'Making a preview copy'
@@ -76,6 +84,12 @@ function PreviewPoster({
               {Number.isFinite(progress) ? `${Math.round(progress)}% · ` : ''}
               {formatElapsed(elapsed)} elapsed
             </span>
+            {stalled && (
+              <p className="preview-poster-note">
+                Still working. Large HEVC videos can take several minutes here. You can skip
+                the preview; nothing else depends on it.
+              </p>
+            )}
             {onCancel && (
               <button type="button" className="preview-poster-cancel" onClick={onCancel}>
                 Skip preview

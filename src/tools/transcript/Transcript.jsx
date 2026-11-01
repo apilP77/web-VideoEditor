@@ -673,6 +673,7 @@ function Transcript({ tool }) {
                         status={preview.status}
                         progress={preview.progress}
                         startedAt={preview.conversionStartedAt}
+                        progressUpdatedAt={preview.progressUpdatedAt}
                         message={preview.message}
                         technicalDetails={preview.technicalDetails}
                         note="Transcription reads the original file's audio, so it still works."

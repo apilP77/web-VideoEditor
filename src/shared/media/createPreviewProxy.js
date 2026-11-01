@@ -1,4 +1,5 @@
 import { createPreviewProxyWithFFmpeg } from '../ffmpeg/ffmpegClient.js'
+import { isOutOfMemoryError, PREVIEW_COPY_MEMORY_MESSAGE } from './memoryErrors.js'
 
 let nextRequestId = 1
 
@@ -133,8 +134,11 @@ export async function createPreviewProxy(
     }
   }
 
+  const outOfMemory = isOutOfMemoryError(ffmpegError) || isOutOfMemoryError(webCodecsError)
   const error = new Error(
-    "Your browser can't show this video's picture (likely HEVC). Captions can still be created from the audio. To preview and export, try Chrome with hardware HEVC support, or convert the video to H.264 MP4 first.",
+    outOfMemory
+      ? PREVIEW_COPY_MEMORY_MESSAGE
+      : "A preview copy of this video could not be made on this device. The original file is still used for everything else. To preview it, convert it to a 1080p H.264 MP4 first.",
     { cause: ffmpegError ?? webCodecsError },
   )
   error.technicalDetails = [

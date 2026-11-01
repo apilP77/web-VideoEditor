@@ -13,6 +13,7 @@ const IDLE_CONVERSION = Object.freeze({
   status: 'idle',
   progress: null,
   startedAt: 0,
+  updatedAt: 0,
   error: '',
   details: '',
 })
@@ -43,6 +44,7 @@ export const PREVIEW_UNAVAILABLE_MESSAGE =
  *   showPoster: boolean,
  *   progress: number | null,
  *   conversionStartedAt: number,
+ *   progressUpdatedAt: number,
  *   message: string,
  *   technicalDetails: string,
  *   cancelConversion: () => void,
@@ -106,7 +108,11 @@ export function usePreviewFallback({ file, videoRef, waitBeforeFFmpeg, proxyLarg
           if (controller.signal.aborted) return
           setConversion((current) =>
             current.source === sourceFile
-              ? { ...current, progress: Number.isFinite(percent) ? percent : null }
+              ? {
+                  ...current,
+                  progress: Number.isFinite(percent) ? percent : null,
+                  updatedAt: getMonotonicTime(),
+                }
               : current,
           )
         },
@@ -294,6 +300,7 @@ export function usePreviewFallback({ file, videoRef, waitBeforeFFmpeg, proxyLarg
     showPoster: frameAvailable === false && !proxyFile,
     progress: activeConversion.progress,
     conversionStartedAt: activeConversion.startedAt,
+    progressUpdatedAt: activeConversion.updatedAt,
     message:
       activeConversion.status === 'failed'
         ? activeConversion.error
