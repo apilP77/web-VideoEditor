@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { changeSpeed } from '../../shared/ffmpeg/ffmpegClient.js'
 import Button from '../../shared/components/Button.jsx'
+import PreviewPoster from '../../shared/components/PreviewPoster.jsx'
 import ProcessingRing from '../../shared/components/ProcessingRing.jsx'
 import ResultCard from '../../shared/components/ResultCard.jsx'
 import ToolLayout from '../../shared/components/ToolLayout.jsx'
@@ -13,7 +14,7 @@ import { getMonotonicTime } from '../../shared/utils/timing.js'
 import { calculateNewDuration } from '../../shared/media/speed.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import { resolveVideoMetadata } from '../../shared/media/videoMetadata.js'
-import { useObjectUrl } from '../../shared/media/useObjectUrl.js'
+import { usePreviewFallback } from '../../shared/media/usePreviewFallback.js'
 import './speed.css'
 
 const SPEED_PRESETS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4]
@@ -42,7 +43,9 @@ function Speed({ tool }) {
   const videoFailedRef = useRef(false)
   const abortControllerRef = useRef(null)
   const [file, setFile] = useState(null)
-  const sourceUrl = useObjectUrl(file)
+  // A 960px copy is made only when the browser cannot show the picture;
+  // export always uses the original file.
+  const preview = usePreviewFallback({ file, videoRef, proxyLargeSources: false })
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 })
   const [mediaInfo, setMediaInfo] = useState(UNKNOWN_MEDIA_INFO)
   const [duration, setDuration] = useState(0)
@@ -58,7 +61,6 @@ function Speed({ tool }) {
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
   const [metadataError, setMetadataError] = useState('')
-  const [previewUnavailable, setPreviewUnavailable] = useState(false)
   const [saved, setSaved] = useState(false)
   const isExporting = status === 'processing'
   const hasMetadata = videoSize.width > 0 && duration > 0
@@ -93,7 +95,7 @@ function Speed({ tool }) {
 
     video.playbackRate = speed
     video.preservesPitch = keepAudioPitchNatural
-  }, [keepAudioPitchNatural, speed, sourceUrl])
+  }, [keepAudioPitchNatural, speed, preview.previewUrl])
 
   const resultSettingsChanged = Boolean(
     result?.settings &&
@@ -123,7 +125,6 @@ function Speed({ tool }) {
     setStatus('idle')
     setError('')
     setMetadataError('')
-    setPreviewUnavailable(false)
     videoFailedRef.current = false
     setSaved(false)
   }
@@ -140,7 +141,6 @@ function Speed({ tool }) {
       setVideoSize({ width: resolved.width, height: resolved.height })
       setDuration(resolved.duration)
       setMetadataError('')
-      setPreviewUnavailable(videoFailedRef.current || resolved.pictureVisible === false)
       return
     }
     // Only give up once both the browser and the file reader have answered.
@@ -151,11 +151,16 @@ function Speed({ tool }) {
     }
   }
 
-  function handleMetadata() {
+  function handleMetadata(event) {
+    preview.videoHandlers.onLoadedMetadata(event)
+    // The preview copy is smaller; size and length come from the original.
+    if (event.currentTarget.currentSrc !== preview.sourceUrl) return
     applyMetadata(mediaInfo)
   }
 
-  function handlePreviewError() {
+  function handlePreviewError(event) {
+    preview.videoHandlers.onError(event)
+    if (event.currentTarget.currentSrc !== preview.sourceUrl) return
     videoFailedRef.current = true
     applyMetadata(mediaInfo)
   }
@@ -198,6 +203,8 @@ function Speed({ tool }) {
   async function exportVideo() {
     if (!file || !hasMetadata || speed === 1) return
 
+    // Free the FFmpeg worker so export does not wait behind a preview copy.
+    if (preview.status === 'converting') preview.cancelConversion()
     const controller = new AbortController()
     abortControllerRef.current = controller
     const startedAt = getMonotonicTime()
@@ -310,11 +317,13 @@ function Speed({ tool }) {
 
                   <VideoPreview
                     videoRef={videoRef}
-                    src={sourceUrl}
+                    src={preview.previewUrl}
                     videoProps={{
                       playsInline: true,
                       preload: 'metadata',
                       onLoadedMetadata: handleMetadata,
+                      onLoadedData: preview.videoHandlers.onLoadedData,
+                      onSeeked: preview.videoHandlers.onSeeked,
                       onError: handlePreviewError,
                       onTimeUpdate: () => {
                         if (videoRef.current) {
@@ -329,14 +338,21 @@ function Speed({ tool }) {
                         ? `${videoSize.width} / ${videoSize.height}`
                         : '16 / 9',
                     }}
-                  />
-
-                  {previewUnavailable && (
-                    <p className="tool-notice" role="status">
-                      This browser can't show this video's picture (common with iPhone
-                      HEVC/H.265 videos). You can still change the speed and export it.
-                    </p>
-                  )}
+                  >
+                    {preview.showPoster && (
+                      <PreviewPoster
+                        fileName={file.name}
+                        codec={preview.sourceInfo?.codec}
+                        status={preview.status}
+                        progress={preview.progress}
+                        startedAt={preview.conversionStartedAt}
+                        message={preview.message}
+                        technicalDetails={preview.technicalDetails}
+                        note="You can still change the speed and export. The original file is used."
+                        onCancel={preview.cancelConversion}
+                      />
+                    )}
+                  </VideoPreview>
 
                   <VideoPlayerControls
                     currentTime={currentTime}

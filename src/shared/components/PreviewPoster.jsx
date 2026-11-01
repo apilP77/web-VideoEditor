@@ -40,19 +40,20 @@ function PreviewPoster({
   onCancel,
 }) {
   const converting = status === 'converting'
+  const unavailable = status === 'failed' || status === 'unavailable'
   const elapsed = useElapsed(startedAt, converting)
   const codecLabel = describeCodec(codec)
   const title = converting
     ? 'Making a preview copy'
-    : status === 'failed'
+    : unavailable
       ? 'Preview not available'
       : 'Checking the picture…'
 
   return (
-    <div className={`preview-poster is-${status}`} role="status" aria-live="polite">
+    <div className={`preview-poster is-${unavailable ? 'failed' : status}`} role="status" aria-live="polite">
       <div className="preview-poster-card">
         <span className="preview-poster-icon" aria-hidden="true">
-          {status === 'failed' ? <VideoOff size={22} /> : <Film size={22} />}
+          {unavailable ? <VideoOff size={22} /> : <Film size={22} />}
         </span>
         <strong className="preview-poster-title">{title}</strong>
         <span className="preview-poster-file">

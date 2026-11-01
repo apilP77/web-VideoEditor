@@ -28,9 +28,10 @@ export const PREVIEW_UNAVAILABLE_MESSAGE =
  * Attach `videoHandlers` to the <video> element and play `previewUrl`. The
  * original file is always kept for processing; the copy is only for preview.
  *
- * @param {{file: File | null, videoRef: import('react').RefObject<HTMLVideoElement | null>, waitBeforeFFmpeg?: () => Promise<unknown>}} options
- *   Source file, the preview video element, and optional higher-priority
- *   FFmpeg work to let finish before an FFmpeg preview encode starts.
+ * @param {{file: File | null, videoRef: import('react').RefObject<HTMLVideoElement | null>, waitBeforeFFmpeg?: () => Promise<unknown>, proxyLargeSources?: boolean}} options
+ *   Source file, the preview video element, optional higher-priority FFmpeg
+ *   work to let finish before an FFmpeg preview encode starts, and whether a
+ *   decodable but large (over about 2K) source also gets a lighter copy.
  * @returns {{
  *   sourceUrl: string,
  *   previewUrl: string,
@@ -48,7 +49,7 @@ export const PREVIEW_UNAVAILABLE_MESSAGE =
  *   videoHandlers: Record<string, (event: Event) => void>,
  * }} Preview state and handlers.
  */
-export function usePreviewFallback({ file, videoRef, waitBeforeFFmpeg }) {
+export function usePreviewFallback({ file, videoRef, waitBeforeFFmpeg, proxyLargeSources = true }) {
   const sourceUrl = useObjectUrl(file)
   // State is tagged with the file it belongs to, so changing files never
   // shows stale results and nothing needs resetting inside an effect.
@@ -63,10 +64,12 @@ export function usePreviewFallback({ file, videoRef, waitBeforeFFmpeg }) {
   const availableForRef = useRef(null)
   const blackRetryForRef = useRef(null)
   const waitRef = useRef(waitBeforeFFmpeg)
+  const proxyLargeRef = useRef(proxyLargeSources)
 
   useEffect(() => {
     waitRef.current = waitBeforeFFmpeg
-  }, [waitBeforeFFmpeg])
+    proxyLargeRef.current = proxyLargeSources
+  }, [waitBeforeFFmpeg, proxyLargeSources])
 
   const sourceInfo = info.source === file ? info.value : null
   const proxyFile = proxy.source === file ? proxy.file : null
@@ -190,7 +193,10 @@ export function usePreviewFallback({ file, videoRef, waitBeforeFFmpeg }) {
       if (!active) return
       setInfo({ source: file, value })
       debugLog('preview', 'source info', value)
-      if (shouldCreatePreviewProxy({ width: value.width, height: value.height })) {
+      if (
+        proxyLargeRef.current &&
+        shouldCreatePreviewProxy({ width: value.width, height: value.height })
+      ) {
         void requestProxy(file, { preferFFmpeg: false, reason: 'large source', knownInfo: value })
       }
     })

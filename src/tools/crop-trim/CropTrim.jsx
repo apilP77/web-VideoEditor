@@ -5,6 +5,7 @@ import {
   trimVideo,
 } from '../../shared/media/engine'
 import Button from '../../shared/components/Button'
+import PreviewPoster from '../../shared/components/PreviewPoster'
 import ProcessingRing from '../../shared/components/ProcessingRing'
 import ResultCard from '../../shared/components/ResultCard'
 import ToolLayout from '../../shared/components/ToolLayout'
@@ -22,7 +23,7 @@ import { isVideoFile } from '../../shared/utils/mediaFiles'
 import { getMonotonicTime } from '../../shared/utils/timing'
 import { getMediaInfo } from '../../shared/media/mediaInfo'
 import { resolveVideoMetadata } from '../../shared/media/videoMetadata'
-import { useObjectUrl } from '../../shared/media/useObjectUrl'
+import { usePreviewFallback } from '../../shared/media/usePreviewFallback'
 import './cropTrim.css'
 
 const ASPECT_PRESETS = [
@@ -61,7 +62,9 @@ function CropTrim({ tool }) {
   const dragRef = useRef(null)
   const abortControllerRef = useRef(null)
   const [file, setFile] = useState(null)
-  const sourceUrl = useObjectUrl(file)
+  // A 960px copy is made only when the browser cannot show the picture, so
+  // there is something to crop against; export always uses the original.
+  const preview = usePreviewFallback({ file, videoRef, proxyLargeSources: false })
   const [result, setResult] = useState(null)
   const [videoSize, setVideoSize] = useState({ width: 0, height: 0 })
   const [mediaInfo, setMediaInfo] = useState(UNKNOWN_MEDIA_INFO)
@@ -80,7 +83,6 @@ function CropTrim({ tool }) {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [metadataError, setMetadataError] = useState('')
-  const [previewUnavailable, setPreviewUnavailable] = useState(false)
   const isExporting = status === 'processing'
 
   useEffect(() => {
@@ -137,7 +139,6 @@ function CropTrim({ tool }) {
     setActivePreset('Free')
     setError('')
     setMetadataError('')
-    setPreviewUnavailable(false)
     videoFailedRef.current = false
     appliedMetadataRef.current = null
   }
@@ -167,7 +168,6 @@ function CropTrim({ tool }) {
       return
     }
 
-    setPreviewUnavailable(videoFailedRef.current || resolved.pictureVisible === false)
     // The second source to report usually agrees; keep the user's edits.
     // A ref is used because this also runs from an async callback.
     const applied = appliedMetadataRef.current
@@ -191,11 +191,17 @@ function CropTrim({ tool }) {
     setError('')
   }
 
-  function handleMetadata() {
+  function handleMetadata(event) {
+    preview.videoHandlers.onLoadedMetadata(event)
+    // The preview copy is smaller; size, length and crop stay in the
+    // original's pixels.
+    if (event.currentTarget.currentSrc !== preview.sourceUrl) return
     applyMetadata(mediaInfo)
   }
 
-  function handlePreviewError() {
+  function handlePreviewError(event) {
+    preview.videoHandlers.onError(event)
+    if (event.currentTarget.currentSrc !== preview.sourceUrl) return
     videoFailedRef.current = true
     applyMetadata(mediaInfo)
   }
@@ -371,6 +377,8 @@ function CropTrim({ tool }) {
   async function exportVideo() {
     if (!file || !hasMetadata || !hasChanges) return
 
+    // Free the FFmpeg worker so export does not wait behind a preview copy.
+    if (preview.status === 'converting') preview.cancelConversion()
     setStatus('processing')
     setProgress(null)
     const startedAt = getMonotonicTime()
@@ -534,7 +542,7 @@ function CropTrim({ tool }) {
 
                     <VideoPreview
                       videoRef={videoRef}
-                      src={sourceUrl}
+                      src={preview.previewUrl}
                       frameClassName="preview-frame"
                       videoClassName="video-preview-video-fill source-video"
                       frameRef={previewRef}
@@ -554,13 +562,15 @@ function CropTrim({ tool }) {
                       videoProps={{
                         playsInline: true,
                         onLoadedMetadata: handleMetadata,
+                        onLoadedData: preview.videoHandlers.onLoadedData,
+                        onSeeked: preview.videoHandlers.onSeeked,
                         onError: handlePreviewError,
                         onTimeUpdate: handleTimeUpdate,
                         onPlay: handlePlay,
                         onPause: () => setIsPlaying(false),
                       }}
                     >
-                      {displayedCrop && (
+                      {displayedCrop && !preview.showPoster && (
                         <>
                           <div
                             className="crop-dim crop-dim-top"
@@ -616,15 +626,20 @@ function CropTrim({ tool }) {
                           </div>
                         </>
                       )}
+                      {preview.showPoster && (
+                        <PreviewPoster
+                          fileName={file.name}
+                          codec={preview.sourceInfo?.codec}
+                          status={preview.status}
+                          progress={preview.progress}
+                          startedAt={preview.conversionStartedAt}
+                          message={preview.message}
+                          technicalDetails={preview.technicalDetails}
+                          note="You can still trim, pick a crop aspect ratio and export. The original file is used."
+                          onCancel={preview.cancelConversion}
+                        />
+                      )}
                     </VideoPreview>
-
-                    {previewUnavailable && (
-                      <p className="tool-notice" role="status">
-                        This browser can't show this video's picture (common with iPhone
-                        HEVC/H.265 videos). You can still trim and crop by the numbers and
-                        export it.
-                      </p>
-                    )}
 
                     <VideoPlayerControls
                       currentTime={currentTime}
