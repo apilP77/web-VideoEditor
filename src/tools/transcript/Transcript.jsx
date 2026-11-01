@@ -17,6 +17,9 @@ import { decodeAudio } from '../../shared/media/decodeAudio.js'
 import { getMediaDuration } from '../../shared/media/duration.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import { useObjectUrl } from '../../shared/media/useObjectUrl.js'
+import { usePreviewFallback } from '../../shared/media/usePreviewFallback.js'
+import VideoPreview from '../../shared/components/VideoPreview.jsx'
+import PreviewPoster, { PreviewCopyBadge } from '../../shared/components/PreviewPoster.jsx'
 import {
   applyEditedText,
   formatTimestamp,
@@ -185,6 +188,11 @@ function Transcript({ tool }) {
   const [file, setFile] = useState(null)
   const sourceUrl = useObjectUrl(file)
   const [mediaInfo, setMediaInfo] = useState(null)
+  // Only video files get the picture check and optional preview copy.
+  const preview = usePreviewFallback({
+    file: mediaInfo?.hasVideo === true ? file : null,
+    videoRef,
+  })
   const [currentTime, setCurrentTime] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [model, setModel] = useState('balanced')
@@ -521,10 +529,11 @@ function Transcript({ tool }) {
 
   function handleMediaMetadata(event) {
     const media = event.currentTarget
+    // Prefer the file's real size; the preview copy is only 960px.
     setMediaInfo((current) => ({
       ...current,
-      width: media.videoWidth || current?.width || 0,
-      height: media.videoHeight || current?.height || 0,
+      width: current?.width || media.videoWidth || 0,
+      height: current?.height || media.videoHeight || 0,
       duration: getMediaDuration(media.duration, current?.duration),
       hasVideo: media instanceof HTMLVideoElement,
     }))
@@ -651,31 +660,50 @@ function Transcript({ tool }) {
                   </div>
                 </div>
 
-                <div className="transcript-preview-frame">
-                  {hasVideo ? (
-                    <video
-                      ref={videoRef}
-                      className="transcript-source-video"
-                      src={sourceUrl || undefined}
-                      playsInline
-                      preload="metadata"
-                      onLoadedMetadata={handleMediaMetadata}
-                      onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-                      onPlay={() => setIsPlaying(true)}
-                      onPause={() => setIsPlaying(false)}
-                      onError={() =>
-                        setPreviewNote(
-                          'This video cannot be previewed, but audio transcription may still work.',
-                        )
-                      }
-                      style={{
-                        aspectRatio:
-                          mediaInfo?.width && mediaInfo?.height
-                            ? `${mediaInfo.width} / ${mediaInfo.height}`
-                            : '16 / 9',
-                      }}
-                    />
-                  ) : (
+                {hasVideo ? (
+                  <VideoPreview
+                    videoRef={videoRef}
+                    src={preview.previewUrl}
+                    videoProps={{
+                      playsInline: true,
+                      preload: 'metadata',
+                      onLoadedMetadata: (event) => {
+                        preview.videoHandlers.onLoadedMetadata(event)
+                        handleMediaMetadata(event)
+                      },
+                      onLoadedData: preview.videoHandlers.onLoadedData,
+                      onSeeked: preview.videoHandlers.onSeeked,
+                      onError: preview.videoHandlers.onError,
+                      onTimeUpdate: (event) => setCurrentTime(event.currentTarget.currentTime),
+                      onPlay: () => setIsPlaying(true),
+                      onPause: () => setIsPlaying(false),
+                    }}
+                  >
+                    {preview.showPoster ? (
+                      <PreviewPoster
+                        fileName={file.name}
+                        codec={preview.sourceInfo?.codec ?? mediaInfo?.codec}
+                        status={preview.status}
+                        progress={preview.progress}
+                        startedAt={preview.conversionStartedAt}
+                        message={preview.message}
+                        technicalDetails={preview.technicalDetails}
+                        note="Transcription reads the original file's audio, so it still works."
+                        onCancel={
+                          preview.status === 'converting' ? preview.cancelConversion : undefined
+                        }
+                      />
+                    ) : (
+                      preview.status === 'converting' && (
+                        <PreviewCopyBadge
+                          progress={preview.progress}
+                          onCancel={preview.cancelConversion}
+                        />
+                      )
+                    )}
+                  </VideoPreview>
+                ) : (
+                  <div className="transcript-preview-frame">
                     <div className="transcript-audio-preview">
                       <FileAudio size={36} aria-hidden="true" />
                       <span>{file.name}</span>
@@ -691,8 +719,8 @@ function Transcript({ tool }) {
                         aria-label="Audio preview"
                       />
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {hasVideo && (
                   <VideoPlayerControls
