@@ -513,6 +513,9 @@ function CropTrim({ tool }) {
                         aspectRatio: hasMetadata
                           ? `${videoSize.width} / ${videoSize.height}`
                           : '16 / 9',
+                        '--preview-aspect': hasMetadata
+                          ? videoSize.width / videoSize.height
+                          : 16 / 9,
                       }}
                       frameProps={{
                         onPointerMove: handleCropPointerMove,
