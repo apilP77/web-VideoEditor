@@ -10,6 +10,7 @@ export const CAPTION_PACES = [
 
 const SENTENCE_END = /[.!?…]["'”’)\]]*$/u
 const MAX_SENTENCE_CHARACTERS = 84
+const PAUSE_SECONDS = 0.4
 
 function getWordText(word) {
   return String(word.word ?? '').trim()
@@ -25,7 +26,66 @@ function getCaption(words) {
 }
 
 /**
+ * Splits words into `count` consecutive chunks of near-equal size, measured
+ * in words, or in characters when `byCharacters` is set.
+ */
+function splitEvenly(phrase, lengths, count, byCharacters) {
+  if (!byCharacters) {
+    const chunks = []
+    let index = 0
+    for (let chunk = 0; chunk < count; chunk += 1) {
+      const size = Math.ceil((phrase.length - index) / (count - chunk))
+      chunks.push(phrase.slice(index, index + size))
+      index += size
+    }
+    return chunks
+  }
+
+  const total = lengths.reduce((sum, length) => sum + length + 1, -1)
+  const chunks = Array.from({ length: count }, () => [])
+  let offset = 0
+  for (const [index, word] of phrase.entries()) {
+    const center = offset + lengths[index] / 2
+    chunks[Math.min(count - 1, Math.floor((center / total) * count))].push(word)
+    offset += lengths[index] + 1
+  }
+  return chunks.filter((chunk) => chunk.length > 0)
+}
+
+/**
+ * Splits a phrase into the fewest evenly sized chunks that respect the
+ * limits, so a caption is never left holding one stranded word.
+ *
+ * @param {Array<{word: string}>} phrase Words between natural breaks.
+ * @param {number} maximumWords Word limit per chunk, or Infinity.
+ * @param {number} maximumCharacters Character limit per chunk, or Infinity.
+ * @returns {Array<Array<{word: string}>>} Balanced chunks in order.
+ */
+function balancePhrase(phrase, maximumWords, maximumCharacters) {
+  const lengths = phrase.map((word) => getWordText(word).length)
+  const byCharacters = Number.isFinite(maximumCharacters)
+  const fits = (chunk) =>
+    chunk.length <= maximumWords &&
+    (chunk.length === 1 ||
+      chunk.reduce((sum, word) => sum + getWordText(word).length + 1, -1) <=
+        maximumCharacters)
+
+  for (
+    let count = Math.max(1, Math.ceil(phrase.length / maximumWords));
+    count < phrase.length;
+    count += 1
+  ) {
+    const chunks = splitEvenly(phrase, lengths, count, byCharacters)
+    if (chunks.every(fits)) return chunks
+  }
+  return phrase.map((word) => [word])
+}
+
+/**
  * Groups timed transcript words into captions for the selected reading pace.
+ *
+ * Words are first split into phrases at pauses and sentence ends, then each
+ * phrase is divided into evenly sized captions within the pace limit.
  *
  * @param {Array<{word: string, start: number, end: number}>} words Timed words in source order.
  * @param {number | 'sentence'} pace Maximum words per caption or sentence mode.
@@ -33,50 +93,32 @@ function getCaption(words) {
  */
 export function layoutCaptions(words, pace = 5) {
   const maximumWords = pace === 'sentence' ? Infinity : Number(pace)
-  if (!Number.isFinite(maximumWords) && maximumWords !== Infinity) {
-    throw new TypeError('Caption pace must be 1, 2, 3, 5, or sentence.')
-  }
   if (![1, 2, 3, 5, Infinity].includes(maximumWords)) {
     throw new TypeError('Caption pace must be 1, 2, 3, 5, or sentence.')
   }
+  const maximumCharacters = pace === 'sentence' ? MAX_SENTENCE_CHARACTERS : Infinity
 
-  const captions = []
+  const phrases = []
   let current = []
-  let currentCharacters = 0
-
-  function flush() {
-    if (current.length === 0) return
-    captions.push(getCaption(current))
-    current = []
-    currentCharacters = 0
-  }
-
   for (const word of words) {
     const text = getWordText(word)
     if (!text || !Number.isFinite(word.start) || !Number.isFinite(word.end)) continue
     const previous = current[current.length - 1]
-    const wouldPause = previous && word.start - previous.end > 0.4
-    const wouldOverflow =
-      pace === 'sentence' &&
-      current.length > 0 &&
-      currentCharacters + text.length + 1 > MAX_SENTENCE_CHARACTERS
-
     if (
-      current.length > 0 &&
-      (wouldPause ||
-        wouldOverflow ||
-        (pace !== 'sentence' && current.length >= maximumWords) ||
+      previous &&
+      (word.start - previous.end > PAUSE_SECONDS ||
         SENTENCE_END.test(getWordText(previous)))
     ) {
-      flush()
+      phrases.push(current)
+      current = []
     }
-
     current.push(word)
-    currentCharacters += text.length + (current.length > 1 ? 1 : 0)
   }
+  if (current.length > 0) phrases.push(current)
 
-  flush()
-  return captions
+  return phrases.flatMap((phrase) =>
+    balancePhrase(phrase, maximumWords, maximumCharacters).map(getCaption),
+  )
 }
 
 /**

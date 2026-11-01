@@ -745,29 +745,43 @@ function Captions({ tool }) {
     })
   }, [activeCaptionIndex])
 
-  function isBlackVideoFrame(video) {
+  /**
+   * Reads a tiny copy of the current frame.
+   *
+   * Returns 'unknown' while the frame cannot be read yet: during a seek the
+   * browser reports readyState < 2 and drawImage yields fully transparent
+   * pixels, which must not be mistaken for a black (undecodable) picture.
+   */
+  function inspectVideoFrame(video) {
+    if (video.readyState < 2 || video.seeking) return 'unknown'
     const canvas = document.createElement('canvas')
     canvas.width = 32
     canvas.height = 32
     const context = canvas.getContext('2d', { willReadFrequently: true })
-    if (!context) return true
+    if (!context) return 'unknown'
     try {
       context.drawImage(video, 0, 0, canvas.width, canvas.height)
       const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+      let opaque = false
       for (let index = 0; index < pixels.length; index += 4) {
+        if (pixels[index + 3] === 0) continue
+        opaque = true
         if (pixels[index] > 4 || pixels[index + 1] > 4 || pixels[index + 2] > 4) {
-          return false
+          return 'visible'
         }
       }
-      return true
+      return opaque ? 'black' : 'unknown'
     } catch (error) {
       console.warn('Could not inspect the decoded preview frame.', error)
-      return true
+      return 'unknown'
     }
   }
 
   function markPreviewFrameAvailable(video) {
-    if (isBlackVideoFrame(video)) {
+    const frameState = inspectVideoFrame(video)
+    // Not readable yet; the seeked event or next frame callback checks again.
+    if (frameState === 'unknown') return false
+    if (frameState === 'black') {
       previewFrameAvailableRef.current = false
       const activeFile = previewProxyFile ?? file
       const canPlayType = activeFile ? video.canPlayType(activeFile.type) || 'no' : 'unknown'
@@ -1066,24 +1080,15 @@ function Captions({ tool }) {
     }
   }
 
-  function handleVideoMetadata(event) {
-    const video = event.currentTarget
-    const validDuration = getMediaDuration(video.duration, mediaInfo?.duration)
-    setMediaInfo((current) => ({
-      ...current,
-      width: video.videoWidth || current?.width || 0,
-      height: video.videoHeight || current?.height || 0,
-      duration: getMediaDuration(video.duration, current?.duration),
-      hasVideo: true,
-    }))
-    if (video.currentTime === 0 && validDuration > 0) {
-      video.currentTime = Math.min(0.01, validDuration / 2)
-    }
-    setPreviewFrameVersion((version) => version + 1)
-  }
-
   function handleVideoSeeked(event) {
     const video = event.currentTarget
+    if (
+      !previewFrameAvailableRef.current &&
+      video.currentSrc === previewUrl &&
+      video.videoWidth > 0
+    ) {
+      markPreviewFrameAvailable(video)
+    }
     setCurrentTime(video.currentTime)
     setPreviewFrameVersion((version) => version + 1)
   }

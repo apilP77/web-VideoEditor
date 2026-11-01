@@ -7,14 +7,19 @@ import {
 } from './audioChunks.js'
 import { getWhisperBackend } from './backend.js'
 
+// Word-level timestamps need cross-attention outputs, which only the
+// `_timestamped` exports include. The plain exports fail with
+// "Model outputs must contain cross attentions to extract timestamps".
 const MODEL_IDS = {
-  fast: 'onnx-community/whisper-tiny',
-  balanced: 'onnx-community/whisper-base',
-  accurate: 'onnx-community/whisper-small',
+  fast: 'onnx-community/whisper-tiny_timestamped',
+  balanced: 'onnx-community/whisper-base_timestamped',
+  accurate: 'onnx-community/whisper-small_timestamped',
 }
+// Quantizing the Whisper encoder noticeably hurts accuracy, so the CPU path
+// keeps the encoder at full precision and only quantizes the decoder.
 const DTYPE_BY_DEVICE = {
   webgpu: 'fp32',
-  wasm: 'q8',
+  wasm: { encoder_model: 'fp32', decoder_model_merged: 'q8' },
 }
 const SAMPLE_RATE = 16_000
 const CHUNK_SECONDS = 30
@@ -196,7 +201,7 @@ async function prepareModel(request) {
 
 async function transcribe(request) {
   await runRequest(request, async () => {
-    const { requestId, audio, language } = request
+    const { requestId, audio, language, model } = request
     if (!(audio instanceof Float32Array) || audio.length === 0) {
       throw new Error('The audio could not be decoded. Choose another file.')
     }

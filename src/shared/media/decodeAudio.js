@@ -33,6 +33,9 @@ async function toMono16k(audioBuffer, signal) {
   const source = context.createBufferSource()
   source.buffer = audioBuffer
   source.connect(context.destination)
+  // Without start() the source never plays and the render is pure silence,
+  // which Whisper turns into hallucinated text such as "you".
+  source.start(0)
   const rendered = await context.startRendering()
 
   if (signal?.aborted) throw createAbortError()
