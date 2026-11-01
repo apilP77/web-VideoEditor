@@ -377,8 +377,8 @@ function CropTrim({ tool }) {
   async function exportVideo() {
     if (!file || !hasMetadata || !hasChanges) return
 
-    // Free the FFmpeg worker so export does not wait behind a preview copy.
-    if (preview.status === 'converting') preview.cancelConversion()
+    // A running preview copy is paused by the FFmpeg client and resumes
+    // after the export, so the export never waits behind it.
     setStatus('processing')
     setProgress(null)
     const startedAt = getMonotonicTime()

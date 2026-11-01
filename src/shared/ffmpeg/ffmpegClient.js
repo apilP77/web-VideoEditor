@@ -1,3 +1,6 @@
+import { getJobsToPreempt } from './jobPriority.js'
+import { debugLog } from '../utils/debugLog.js'
+
 let worker
 let nextRequestId = 1
 const pendingJobs = new Map()
@@ -49,6 +52,17 @@ function handleWorkerMessage(event) {
   }
 
   removePendingJob(message.requestId, job)
+  if (
+    job.preempted &&
+    !job.signal?.aborted &&
+    (message.type === 'cancelled' || message.type === 'error')
+  ) {
+    // Paused so more urgent work could run; send it again. The worker
+    // queue keeps it behind the job that paused it.
+    debugLog('ffmpeg', `#${message.requestId} ${job.type} paused; restarting after other work`)
+    runJob(job.type, job.file, job.options).then(job.resolve, job.reject)
+    return
+  }
   if (message.type === 'cancelled') {
     job.reject(createAbortError())
     return
@@ -132,11 +146,22 @@ async function runJob(type, file, options = {}, providedFileData) {
   const requestId = nextRequestId++
   return new Promise((resolve, reject) => {
     const job = {
+      type,
+      file,
+      options,
       resolve,
       reject,
       onProgress: options.onProgress,
       signal: options.signal,
       abortHandler: null,
+      preempted: false,
+    }
+
+    // A long preview copy must not hold up audio extraction or an export.
+    for (const preemptedId of getJobsToPreempt(pendingJobs, type)) {
+      const preempted = pendingJobs.get(preemptedId)
+      preempted.preempted = true
+      getWorker().postMessage({ type: 'cancel', requestId: preemptedId })
     }
 
     job.abortHandler = () => {

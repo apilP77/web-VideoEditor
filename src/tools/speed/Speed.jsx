@@ -203,8 +203,8 @@ function Speed({ tool }) {
   async function exportVideo() {
     if (!file || !hasMetadata || speed === 1) return
 
-    // Free the FFmpeg worker so export does not wait behind a preview copy.
-    if (preview.status === 'converting') preview.cancelConversion()
+    // A running preview copy is paused by the FFmpeg client and resumes
+    // after the export, so the export never waits behind it.
     const controller = new AbortController()
     abortControllerRef.current = controller
     const startedAt = getMonotonicTime()
