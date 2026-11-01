@@ -19,10 +19,12 @@ import '@fontsource/anton/400.css'
 import '@fontsource/caveat/700.css'
 import Button from '../../shared/components/Button.jsx'
 import ProcessingRing from '../../shared/components/ProcessingRing.jsx'
+import ResultCard from '../../shared/components/ResultCard.jsx'
 import ToolLayout from '../../shared/components/ToolLayout.jsx'
 import UploadBox from '../../shared/components/UploadBox.jsx'
 import VideoPlayerControls from '../../shared/components/VideoPlayerControls.jsx'
 import { decodeAudio } from '../../shared/media/decodeAudio.js'
+import { getVideoFrameRate } from '../../shared/media/frameRate.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import {
   CAPTION_PACES,
@@ -37,7 +39,14 @@ import {
   nudgeCaptionStart,
   splitCaption,
 } from '../../shared/captions/engine.js'
+import {
+  getCaptionExportFilename,
+  getCaptionExportWords,
+  shouldWarnAboutCaptionExport,
+} from '../../shared/captions/exportHelpers.js'
+import { exportCaptionVideo } from '../../shared/captions/captionExport.js'
 import { drawCaption } from '../../shared/captions/renderer.js'
+import { toPlainText, toSRT, toVTT } from '../../shared/captions/transcript.js'
 import {
   CAPTION_ANIMATIONS,
   CAPTION_FONTS,
@@ -49,6 +58,7 @@ import {
   loadLatestCaptionProject,
   saveLatestCaptionProject,
 } from '../../shared/storage/captionProjectStorage.js'
+import { useResultCardAttention } from '../../shared/hooks/useResultCardAttention.js'
 import { getMonotonicTime } from '../../shared/utils/timing.js'
 import {
   prepareWhisperModel,
@@ -149,6 +159,20 @@ function formatDuration(seconds) {
   return `${String(Math.floor(whole / 60)).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`
 }
 
+function formatElapsed(milliseconds) {
+  const totalSeconds = Math.floor(Math.max(0, milliseconds) / 1000)
+  return `${String(Math.floor(totalSeconds / 60)).padStart(2, '0')}:${String(totalSeconds % 60).padStart(2, '0')}`
+}
+
+function downloadText(content, fileName, mimeType) {
+  const url = URL.createObjectURL(new Blob([content], { type: mimeType }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
 function getInitialStyle() {
   try {
     const saved = window.localStorage.getItem(STYLE_STORAGE_KEY)
@@ -222,11 +246,13 @@ function Captions({ tool }) {
   const canvasRef = useRef(null)
   const editorListRef = useRef(null)
   const abortControllerRef = useRef(null)
+  const exportAbortControllerRef = useRef(null)
   const progressRef = useRef(null)
   const activeCaptionRef = useRef(-1)
   const [file, setFile] = useState(null)
   const [sourceUrl, setSourceUrl] = useState('')
   const [mediaInfo, setMediaInfo] = useState(null)
+  const [frameRate, setFrameRate] = useState(null)
   const [currentTime, setCurrentTime] = useState(0)
   const [activeCaptionIndex, setActiveCaptionIndex] = useState(-1)
   const [isPlaying, setIsPlaying] = useState(false)
@@ -250,7 +276,29 @@ function Captions({ tool }) {
   const [restoredProject, setRestoredProject] = useState(false)
   const [fontsReady, setFontsReady] = useState(false)
   const [positionDragging, setPositionDragging] = useState(false)
-  const isProcessing = status === 'processing'
+  const [exportStatus, setExportStatus] = useState('idle')
+  const [exportResult, setExportResult] = useState(null)
+  const [exportProgress, setExportProgress] = useState(null)
+  const [exportError, setExportError] = useState('')
+  const [exportTechnicalDetails, setExportTechnicalDetails] = useState('')
+  const [exportStartedAt, setExportStartedAt] = useState(0)
+  const [exportElapsed, setExportElapsed] = useState(0)
+  const [exportFallbackReason, setExportFallbackReason] = useState('')
+  const isProcessing = status === 'processing' || exportStatus === 'processing'
+  const captionWords = useMemo(() => getCaptionExportWords(captions), [captions])
+  const settingsSnapshot = useMemo(
+    () => JSON.stringify({ captions, style }),
+    [captions, style],
+  )
+  const resultSettingsChanged =
+    Boolean(exportResult) && exportResult.settingsSnapshot !== settingsSnapshot
+  const exportWarning = shouldWarnAboutCaptionExport({
+    duration: mediaInfo?.duration ?? 0,
+    width: mediaInfo?.width ?? 0,
+    height: mediaInfo?.height ?? 0,
+    frameRate,
+  })
+  const { cardRef, highlighted } = useResultCardAttention(exportResult)
   const reviewWords = useMemo(
     () => findCaptionReviewWords(captions, spokenLanguage),
     [captions, spokenLanguage],
@@ -299,6 +347,20 @@ function Captions({ tool }) {
   }, [sourceUrl])
 
   useEffect(() => () => abortControllerRef.current?.abort(), [])
+  useEffect(() => () => exportAbortControllerRef.current?.abort(), [])
+
+  useEffect(() => {
+    if (!exportResult?.url) return undefined
+    return () => URL.revokeObjectURL(exportResult.url)
+  }, [exportResult])
+
+  useEffect(() => {
+    if (exportStatus !== 'processing') return undefined
+    const timer = window.setInterval(() => {
+      setExportElapsed(getMonotonicTime() - exportStartedAt)
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [exportStartedAt, exportStatus])
 
   useEffect(() => {
     let active = true
@@ -313,6 +375,14 @@ function Captions({ tool }) {
       })
       .catch((mediaError) => {
         console.error('Could not inspect the selected video.', mediaError)
+      })
+    getVideoFrameRate(file)
+      .then((rate) => {
+        if (active) setFrameRate(rate)
+      })
+      .catch((frameRateError) => {
+        console.error('Could not estimate the video frame rate.', frameRateError)
+        if (active) setFrameRate(null)
       })
     return () => {
       active = false
@@ -401,10 +471,18 @@ function Captions({ tool }) {
       return
     }
     abortControllerRef.current?.abort()
+    exportAbortControllerRef.current?.abort()
     const shouldRestore = restoredProject && lastProject?.fileName === selectedFile.name
     setFile(selectedFile)
     setSourceUrl(URL.createObjectURL(selectedFile))
     setMediaInfo(null)
+    setFrameRate(null)
+    setExportResult(null)
+    setExportStatus('idle')
+    setExportProgress(null)
+    setExportError('')
+    setExportTechnicalDetails('')
+    setExportFallbackReason('')
     setCurrentTime(0)
     setActiveCaptionIndex(-1)
     activeCaptionRef.current = -1
@@ -430,9 +508,11 @@ function Captions({ tool }) {
 
   function startOver() {
     abortControllerRef.current?.abort()
+    exportAbortControllerRef.current?.abort()
     setFile(null)
     setSourceUrl('')
     setMediaInfo(null)
+    setFrameRate(null)
     setCurrentTime(0)
     setActiveCaptionIndex(-1)
     activeCaptionRef.current = -1
@@ -446,6 +526,12 @@ function Captions({ tool }) {
     setTechnicalDetails('')
     setFailedStage(null)
     setRestoredProject(false)
+    setExportResult(null)
+    setExportStatus('idle')
+    setExportProgress(null)
+    setExportError('')
+    setExportTechnicalDetails('')
+    setExportFallbackReason('')
   }
 
   function restoreProject() {
@@ -538,6 +624,69 @@ function Captions({ tool }) {
     }
   }
 
+  async function runCaptionExport() {
+    if (!file || captions.length === 0 || isProcessing) return
+    const controller = new AbortController()
+    exportAbortControllerRef.current = controller
+    const started = getMonotonicTime()
+    setExportStatus('processing')
+    setExportProgress({ stage: 'preparing', percent: null })
+    setExportStartedAt(started)
+    setExportElapsed(0)
+    setExportError('')
+    setExportTechnicalDetails('')
+    setExportFallbackReason('')
+    setError('')
+    if (captions.length > 0) setStatus('done')
+    videoRef.current?.pause()
+    setIsPlaying(false)
+
+    try {
+      const output = await exportCaptionVideo(file, captions, style, {
+        signal: controller.signal,
+        hasAudio: mediaInfo?.hasAudio ?? 'unknown',
+        onProgress: (nextProgress) => setExportProgress(nextProgress),
+        onFallback: (reason) => {
+          setExportFallbackReason(reason)
+          setExportProgress({ stage: 'recording', percent: null })
+        },
+      })
+      if (controller.signal.aborted) return
+      setExportResult({
+        ...output,
+        url: URL.createObjectURL(output.blob),
+        aspectRatio: output.width / output.height,
+        settingsSnapshot,
+        duration: Number.isFinite(output.duration)
+          ? output.duration
+          : Number.isFinite(videoRef.current?.duration)
+            ? videoRef.current.duration
+            : duration,
+      })
+      setExportProgress({ stage: 'complete', percent: 100 })
+      setExportStatus('done')
+    } catch (caughtError) {
+      if (caughtError?.name === 'AbortError' || controller.signal.aborted) {
+        setExportStatus(exportResult ? 'done' : 'idle')
+      } else {
+        setExportError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : 'Could not export this video. Check available memory and try again.',
+        )
+        setExportTechnicalDetails(
+          caughtError?.technicalDetails ??
+            (caughtError?.cause instanceof Error ? caughtError.cause.message : ''),
+        )
+        setExportStatus('error')
+      }
+    } finally {
+      if (exportAbortControllerRef.current === controller) {
+        exportAbortControllerRef.current = null
+      }
+    }
+  }
+
   async function togglePlayback() {
     const video = videoRef.current
     if (!video || isProcessing) return
@@ -608,6 +757,14 @@ function Captions({ tool }) {
 
   function handleMerge(index) {
     setCaptions((current) => mergeCaptions(current, index))
+  }
+
+  function downloadCaptionedVideo() {
+    if (!exportResult) return
+    const link = document.createElement('a')
+    link.href = exportResult.url
+    link.download = exportResult.filename
+    link.click()
   }
 
   const duration = mediaInfo?.duration ?? 0
@@ -1159,7 +1316,7 @@ function Captions({ tool }) {
                   >
                     {actionLabel}
                   </Button>
-                  {(isProcessing || status === 'error') && (
+                  {(status === 'processing' || status === 'error') && (
                     <ProcessingRing
                       stages={PROCESSING_STAGES}
                       stageId={stageId}
@@ -1169,15 +1326,139 @@ function Captions({ tool }) {
                       detail={progressDetail}
                       failedStage={failedStage}
                       onCancel={
-                        isProcessing
+                        status === 'processing'
                           ? () => abortControllerRef.current?.abort()
                           : undefined
                       }
                     />
                   )}
+                  {captions.length > 0 && (
+                    <div className="captions-export-controls" aria-label="Captioned video export">
+                      <p className="captions-export-description">
+                        Burn the current captions and style into a downloadable video.
+                      </p>
+                      {exportWarning && (
+                        <p className="captions-warning" role="status">
+                          Exporting this video may take longer and use substantial memory.
+                        </p>
+                      )}
+                      <div className="captions-export-action-row">
+                        <Button
+                          variant={
+                            exportStatus === 'processing' || !exportResult
+                              ? 'primary'
+                              : 'outline'
+                          }
+                          className={`captions-export-button${exportStatus === 'processing' ? ' is-exporting' : ''}`}
+                          style={{
+                            '--export-progress': `${Number.isFinite(exportProgress?.percent) ? exportProgress.percent : 0}%`,
+                          }}
+                          disabled={isProcessing || !fontsReady}
+                          onClick={runCaptionExport}
+                        >
+                          {exportStatus === 'processing'
+                            ? Number.isFinite(exportProgress?.percent)
+                              ? `Exporting · ${exportProgress.percent}%`
+                              : 'Preparing export…'
+                            : exportStatus === 'error'
+                              ? 'Try again'
+                              : exportResult
+                                ? 'Export again'
+                                : 'Export video'}
+                        </Button>
+                        {exportStatus === 'processing' && (
+                          <Button
+                            variant="secondary"
+                            className="captions-export-cancel"
+                            onClick={() => exportAbortControllerRef.current?.abort()}
+                          >
+                            Cancel
+                          </Button>
+                        )}
+                      </div>
+                      {exportStatus === 'processing' && (
+                        <p className="captions-export-status" role="status" aria-live="polite">
+                          {exportFallbackReason
+                            ? 'This browser cannot use fast encoding. Recording in real time; it takes as long as the video plays.'
+                            : exportProgress?.stage === 'encoding'
+                              ? 'Encoding captioned video frames with WebCodecs.'
+                              : 'Preparing video export.'}
+                          {Number.isFinite(exportProgress?.percent) &&
+                            ` ${exportProgress.percent}% complete.`}
+                          {' '}Elapsed {formatElapsed(exportElapsed)}.
+                        </p>
+                      )}
+                      {exportStatus === 'error' && (
+                        <div className="captions-error" role="alert">
+                          <p className="tool-error">{exportError}</p>
+                          {exportTechnicalDetails && (
+                            <details>
+                              <summary>Details</summary>
+                              <pre>{exportTechnicalDetails}</pre>
+                            </details>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </section>
               </div>
             </div>
+            {exportResult && (
+              <section className="captions-result-section" aria-label="Exported captioned video">
+                <ResultCard
+                  cardRef={cardRef}
+                  result={exportResult}
+                  duration={formatDuration(exportResult.duration)}
+                  resolution={`${exportResult.width} × ${exportResult.height}`}
+                  processedWith={exportResult.processedWith}
+                  onDownload={downloadCaptionedVideo}
+                  downloadVariant={exportStatus === 'processing' ? 'outline' : 'primary'}
+                  settingsChanged={resultSettingsChanged}
+                  highlighted={highlighted}
+                  previewSize="large"
+                >
+                  <div className="captions-subtitle-downloads" aria-label="Download subtitle files">
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        downloadText(
+                          toSRT(captionWords),
+                          getCaptionExportFilename(file.name, 'srt'),
+                          'application/x-subrip',
+                        )
+                      }
+                    >
+                      Download SRT
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        downloadText(
+                          toVTT(captionWords),
+                          getCaptionExportFilename(file.name, 'vtt'),
+                          'text/vtt',
+                        )
+                      }
+                    >
+                      Download VTT
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        downloadText(
+                          toPlainText(captionWords),
+                          getCaptionExportFilename(file.name, 'txt'),
+                          'text/plain',
+                        )
+                      }
+                    >
+                      Download TXT
+                    </Button>
+                  </div>
+                </ResultCard>
+              </section>
+            )}
           </>
         )}
       </div>

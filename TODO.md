@@ -103,8 +103,8 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Customize font, size, position, highlight color, background, stroke, and animation
 - [x] Show detected language and allow a language override
 - [x] Save and restore caption projects locally for 14 days
-- [ ] Export MP4 with captions burned in using FFmpeg
-- [ ] Export `.srt`, `.vtt`, and `.txt` alongside the video
+- [x] Export MP4 with burned-in captions using Mediabunny and WebCodecs, with real-time WebM fallback
+- [x] Export edited captions as `.srt`, `.vtt`, and `.txt`
 
 ## Phase 9: Shared batch system
 - [ ] Build one reusable batch runner that every tool can plug into

@@ -18,7 +18,7 @@ Inspired by "Oh So Simple" free video tools, with a focus on karaoke-style capti
 
 | # | Tool | Description |
 |---|------|-------------|
-| 1 | **Captions generator** | Auto-transcribes speech, edits timed captions, and previews custom styles on video |
+| 1 | **Captions generator** | Auto-transcribes speech, edits timed captions, previews styles, and exports captioned video |
 | 2 | **Transcript generator** | Transcribes video or audio to an editable, timed transcript and exports `.txt`, `.srt`, or `.vtt` |
 | 3 | **Speed changer** | Change a video's speed, choose whether audio pitch stays natural, and preview the result |
 | 4 | **Batch captions** | Process several videos one at a time with shared settings and per-item review |
@@ -42,8 +42,8 @@ Blur faces (needs face-tracking ML), Record with teleprompter, Compress and batc
 | Video processing | `@ffmpeg/ffmpeg` (FFmpeg.wasm) |
 | Speech to text | Whisper in the browser via `@huggingface/transformers` (Transformers.js), word-level timestamps |
 | Caption preview | HTML `<video>` + shared canvas caption renderer |
-| Caption export | Burn captions into MP4 with FFmpeg; export matching SRT, VTT, and TXT files |
-| Background work | Web Workers (FFmpeg and Whisper must never block the UI thread) |
+| Caption export | Mediabunny Conversion with WebCodecs; real-time MediaRecorder fallback |
+| Background work | Web Workers for FFmpeg, Whisper, and fast caption exports |
 | Storage | IndexedDB for the batch queue and recent transcripts (14 days); model files cached by the browser |
 | Hosting | Vercel or Netlify (free) |
 
@@ -56,7 +56,7 @@ Blur faces (needs face-tracking ML), Record with teleprompter, Compress and batc
 There is no backend, so there is no "system design" in the server sense. The app is a frontend pipeline with three layers:
 
 1. **Presentation:** homepage grid, per-tool pages, upload box, progress bar
-2. **Processing:** FFmpeg worker, Whisper worker, caption engine (pure JS)
+2. **Processing:** FFmpeg and Whisper workers, caption engine, and a frame-based caption-export worker
 3. **Storage:** in-memory file handles, IndexedDB for queues
 
 ### Tool registry (the key idea)
@@ -102,10 +102,21 @@ supports pace selection and caption editing operations, and identifies words
 that may need review. The style model and easing functions live in
 `src/shared/captions/styles.js`; one canvas renderer in
 `src/shared/captions/renderer.js` draws the live preview and is shared with the
-planned export pipeline. Caption fonts are bundled locally so the preview does
-not request fonts from an external service. The Captions generator currently
-provides transcription, editing, styles, and live preview; video export is a
-separate follow-up.
+export pipeline. Caption fonts are bundled locally so the preview does not
+request fonts from an external service. Captioned MP4 export runs
+Mediabunny's Conversion API in a Web Worker: each decoded frame is drawn at
+the source resolution, passed through the shared canvas renderer, and encoded
+with WebCodecs as H.264 video and AAC audio while retaining the source audio.
+The worker loads the same bundled caption fonts before drawing. Mediabunny
+reports conversion progress and can cancel the active conversion.
+
+If WebCodecs or the fast encoder fails, the tool records a canvas and the
+source audio with MediaRecorder as WebM. This fallback plays through the
+video in real time, so export takes at least as long as the clip. Both paths
+keep the complete result in browser memory; very long or high-resolution
+videos can be slow or exceed device memory. The tool warns for videos over
+10 minutes and for 1080p-or-higher video at 60 fps or above. Edited captions
+can also be downloaded as SRT, VTT, or plain text.
 
 ### Folder structure
 

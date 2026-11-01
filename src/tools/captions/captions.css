@@ -611,6 +611,84 @@
   min-height: 48px;
 }
 
+.captions-export-controls {
+  display: grid;
+  gap: 10px;
+  margin-top: 20px;
+  border-top: 1px solid #393442;
+  padding-top: 16px;
+}
+
+.captions-export-description,
+.captions-export-status {
+  margin: 0;
+  color: #aaa3b2;
+  font-size: 0.79rem;
+  line-height: 1.5;
+}
+
+.captions-export-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.captions-export-button {
+  width: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 48px;
+  border-radius: 999px;
+  background-color: #6d48bf;
+  background-image: linear-gradient(
+    90deg,
+    #8b5cf6 0,
+    #8b5cf6 var(--export-progress),
+    #6d48bf var(--export-progress),
+    #6d48bf 100%
+  );
+}
+
+.captions-export-button.is-exporting {
+  background-color: #25222e;
+  background-image: linear-gradient(
+    90deg,
+    #8b5cf6 0,
+    #8b5cf6 var(--export-progress),
+    transparent var(--export-progress),
+    transparent 100%
+  );
+}
+
+.captions-export-button.shared-button-outline:not(.is-exporting) {
+  border-color: #a78bfa;
+  background: transparent;
+  color: #e7e1ef;
+}
+
+.captions-export-button.shared-button-outline:not(.is-exporting):hover:not(:disabled) {
+  background: rgb(167 139 250 / 12%);
+}
+
+.captions-export-cancel {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+
+.captions-result-section {
+  margin-top: 24px;
+}
+
+.captions-subtitle-downloads {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.captions-subtitle-downloads .shared-button {
+  min-height: 44px;
+}
+
 .captions-transcription-panel .processing-ring {
   grid-template-columns: 130px minmax(0, 1fr);
   gap: 10px;
@@ -696,6 +774,19 @@
 
   .captions-transcription-panel .processing-ring-stage-panel {
     width: 100%;
+  }
+
+  .captions-export-action-row {
+    align-items: stretch;
+  }
+
+  .captions-export-cancel {
+    padding-inline: 12px;
+  }
+
+  .captions-subtitle-downloads {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }
 

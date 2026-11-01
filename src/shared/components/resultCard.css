@@ -29,6 +29,12 @@
   object-fit: contain;
 }
 
+.result-card-video-large {
+  width: auto;
+  max-width: 100%;
+  max-height: min(60vh, 520px);
+}
+
 .result-card-content {
   grid-template-columns: minmax(0, 1fr);
   align-items: start;

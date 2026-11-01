@@ -19,7 +19,7 @@ function formatDuration(seconds) {
 /**
  * Displays a completed export beside its preview and download action.
  *
- * @param {{variant?: 'video' | 'content', heading?: string, children?: import('react').ReactNode, result?: {url: string, filename: string, blob: Blob, aspectRatio: number}, duration?: string, resolution?: string, processedWith?: string, cardRef?: import('react').RefObject<HTMLElement | null>, onDownload?: () => void, saved?: boolean, settingsChanged?: boolean, highlighted?: boolean}} props Result metadata, content, and actions.
+ * @param {{variant?: 'video' | 'content', heading?: string, children?: import('react').ReactNode, result?: {url: string, filename: string, blob: Blob, aspectRatio: number | string}, duration?: string, resolution?: string, processedWith?: string, cardRef?: import('react').RefObject<HTMLElement | null>, onDownload?: () => void, downloadVariant?: 'primary' | 'outline', saved?: boolean, settingsChanged?: boolean, highlighted?: boolean, previewSize?: 'compact' | 'large'}} props Result metadata, content, and actions.
  * @returns {import('react').JSX.Element} Compact video result card.
  */
 function ResultCard({
@@ -32,9 +32,11 @@ function ResultCard({
   processedWith,
   cardRef,
   onDownload,
+  downloadVariant = 'primary',
   saved,
   settingsChanged,
   highlighted,
+  previewSize = 'compact',
 }) {
   const [mediaInfo, setMediaInfo] = useState(null)
 
@@ -79,7 +81,7 @@ function ResultCard({
       aria-labelledby="result-heading"
     >
       <video
-        className="result-card-video"
+        className={`result-card-video${previewSize === 'large' ? ' result-card-video-large' : ''}`}
         src={result.url}
         controls
         playsInline
@@ -148,7 +150,7 @@ function ResultCard({
 
         <div className="result-actions">
           <Button
-            variant="primary"
+            variant={downloadVariant}
             className="result-download-button"
             onClick={onDownload}
             icon={
@@ -169,6 +171,7 @@ function ResultCard({
             {saved ? 'Saved to your downloads' : ''}
           </p>
         </div>
+        {children}
       </div>
     </article>
   )
