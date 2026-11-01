@@ -2,26 +2,18 @@
   overflow: hidden;
 }
 
-.preview-frame {
+/* The frame keeps the video's aspect ratio and is narrowed so it is never
+   taller than the shared preview limit. The video fills it exactly, so crop
+   overlay coordinates match the picture. */
+.video-preview-frame.preview-frame {
   position: relative;
-  width: 100%;
+  width: min(100%, calc(min(60vh, 520px) * var(--preview-aspect, 1.7778)));
+  min-height: 0;
+  margin-inline: auto;
   overflow: hidden;
   background: #09080c;
   user-select: none;
   touch-action: auto;
-}
-
-.source-video {
-  display: block;
-  width: 100%;
-  height: auto;
-  background: #09080c;
-}
-
-.source-video {
-  width: 100%;
-  height: 100%;
-  object-fit: fill;
 }
 
 .crop-dim {

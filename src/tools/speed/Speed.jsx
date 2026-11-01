@@ -12,6 +12,7 @@ import { isVideoFile } from '../../shared/utils/mediaFiles.js'
 import { getMonotonicTime } from '../../shared/utils/timing.js'
 import { calculateNewDuration } from '../../shared/media/speed.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
+import { resolveVideoMetadata } from '../../shared/media/videoMetadata.js'
 import { useObjectUrl } from '../../shared/media/useObjectUrl.js'
 import './speed.css'
 
@@ -38,6 +39,7 @@ function formatSpeed(speed) {
  */
 function Speed({ tool }) {
   const videoRef = useRef(null)
+  const videoFailedRef = useRef(false)
   const abortControllerRef = useRef(null)
   const [file, setFile] = useState(null)
   const sourceUrl = useObjectUrl(file)
@@ -56,6 +58,7 @@ function Speed({ tool }) {
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
   const [metadataError, setMetadataError] = useState('')
+  const [previewUnavailable, setPreviewUnavailable] = useState(false)
   const [saved, setSaved] = useState(false)
   const isExporting = status === 'processing'
   const hasMetadata = videoSize.width > 0 && duration > 0
@@ -73,7 +76,9 @@ function Speed({ tool }) {
     setMediaInfo(UNKNOWN_MEDIA_INFO)
     if (file) {
       getMediaInfo(file).then((info) => {
-        if (active) setMediaInfo(info)
+        if (!active) return
+        setMediaInfo(info)
+        applyMetadata(info)
       })
     }
 
@@ -118,29 +123,41 @@ function Speed({ tool }) {
     setStatus('idle')
     setError('')
     setMetadataError('')
+    setPreviewUnavailable(false)
+    videoFailedRef.current = false
     setSaved(false)
   }
 
-  function handleMetadata() {
+  /**
+   * Sets size and duration from the video element, falling back to the
+   * file's own metadata when the browser cannot decode the picture.
+   */
+  function applyMetadata(info) {
     const video = videoRef.current
-    if (!video) return
-    if (
-      !Number.isFinite(video.duration) ||
-      video.duration <= 0 ||
-      video.videoWidth < 2 ||
-      video.videoHeight < 2
-    ) {
-      setMetadataError('This video has invalid dimensions or duration.')
+    const videoLoaded = Boolean(video && video.readyState >= 1 && !videoFailedRef.current)
+    const resolved = resolveVideoMetadata(videoLoaded ? video : null, info)
+    if (resolved.valid) {
+      setVideoSize({ width: resolved.width, height: resolved.height })
+      setDuration(resolved.duration)
+      setMetadataError('')
+      setPreviewUnavailable(videoFailedRef.current || resolved.pictureVisible === false)
       return
     }
+    // Only give up once both the browser and the file reader have answered.
+    if (info !== UNKNOWN_MEDIA_INFO && (videoLoaded || videoFailedRef.current)) {
+      setMetadataError(
+        "We couldn't read this video's size or length. Try another file or convert it to MP4.",
+      )
+    }
+  }
 
-    setVideoSize({ width: video.videoWidth, height: video.videoHeight })
-    setDuration(video.duration)
-    setMetadataError('')
+  function handleMetadata() {
+    applyMetadata(mediaInfo)
   }
 
   function handlePreviewError() {
-    setMetadataError('Could not read this video. Try a supported video file.')
+    videoFailedRef.current = true
+    applyMetadata(mediaInfo)
   }
 
   async function togglePlayback() {
@@ -313,6 +330,13 @@ function Speed({ tool }) {
                         : '16 / 9',
                     }}
                   />
+
+                  {previewUnavailable && (
+                    <p className="tool-notice" role="status">
+                      This browser can't show this video's picture (common with iPhone
+                      HEVC/H.265 videos). You can still change the speed and export it.
+                    </p>
+                  )}
 
                   <VideoPlayerControls
                     currentTime={currentTime}

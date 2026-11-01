@@ -189,6 +189,17 @@
   text-align: center;
 }
 
+.tool-notice {
+  margin: 12px 0 0;
+  border: 1px solid #5f5230;
+  border-radius: 9px;
+  padding: 10px 12px;
+  background: #2a2417;
+  color: #f3e3b3;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
 .tool-error {
   border: 1px solid #713b46;
   border-radius: 9px;
