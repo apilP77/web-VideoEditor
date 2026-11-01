@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Check, X } from 'lucide-react'
 import Button from './Button.jsx'
 import { getWeightedProgress } from './processingStages.js'
@@ -7,42 +7,40 @@ import './processingRing.css'
 const CIRCLE_SIZE = 140
 const CIRCLE_RADIUS = 60
 const CIRCLE_LENGTH = 2 * Math.PI * CIRCLE_RADIUS
-const SMALL_RADIUS = 12
-const SMALL_LENGTH = 2 * Math.PI * SMALL_RADIUS
 
 function formatElapsed(milliseconds) {
   const seconds = Math.floor(milliseconds / 1000)
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`
 }
 
-function SmallStageRing({ status, percent }) {
+function StageIcon({ status }) {
   if (status === 'done') {
-    return <Check className="processing-ring-stage-check" size={18} aria-hidden="true" />
+    return (
+      <span className="processing-ring-stage-icon is-done" aria-hidden="true">
+        <Check size={13} strokeWidth={3} />
+      </span>
+    )
   }
   if (status === 'failed') {
-    return <X className="processing-ring-stage-failed" size={18} aria-hidden="true" />
+    return (
+      <span className="processing-ring-stage-icon is-failed" aria-hidden="true">
+        <X size={13} strokeWidth={3} />
+      </span>
+    )
   }
-  if (status === 'waiting') {
-    return <span className="processing-ring-stage-waiting" aria-hidden="true" />
-  }
+  return <span className={`processing-ring-stage-icon is-${status}`} aria-hidden="true" />
+}
 
+function StageBar({ percent }) {
   const determinate = Number.isFinite(percent)
-  const clampedPercent = Math.min(100, Math.max(0, percent ?? 0))
-
   return (
-    <span className="processing-ring-small-wrap" aria-hidden="true">
-      <svg className={determinate ? '' : 'is-indeterminate'} viewBox="0 0 32 32">
-        <circle className="processing-ring-small-track" cx="16" cy="16" r="12" />
-        <circle
-          className="processing-ring-small-progress"
-          cx="16"
-          cy="16"
-          r={SMALL_RADIUS}
-          strokeDasharray={SMALL_LENGTH}
-          strokeDashoffset={determinate ? SMALL_LENGTH * (1 - clampedPercent / 100) : SMALL_LENGTH * 0.68}
-        />
-      </svg>
-      {determinate && <span>{Math.round(percent)}%</span>}
+    <span
+      className={`processing-ring-stage-bar${determinate ? '' : ' is-indeterminate'}`}
+      aria-hidden="true"
+    >
+      <span
+        style={determinate ? { width: `${Math.min(100, Math.max(0, percent))}%` } : undefined}
+      />
     </span>
   )
 }
@@ -63,6 +61,7 @@ function ProcessingRing({
   failedStage = null,
   onCancel,
 }) {
+  const gradientId = `processing-ring-gradient-${useId().replace(/:/g, '')}`
   const [now, setNow] = useState(() => performance.now())
 
   useEffect(() => {
@@ -77,53 +76,84 @@ function ProcessingRing({
     : getWeightedProgress(stages, stageId, percent)
   const waitingSince = progressUpdatedAt || startedAt
   const isStalled = !failed && now - waitingSince >= 15_000
-  const circumference = CIRCLE_LENGTH
   const determinate = Number.isFinite(overallPercent)
   const dashOffset = determinate
-    ? circumference * (1 - overallPercent / 100)
-    : circumference * 0.7
+    ? CIRCLE_LENGTH * (1 - overallPercent / 100)
+    : CIRCLE_LENGTH * 0.72
   const activeLabel =
     stages.find((stage) => stage.id === (failedStage || stageId))?.label ??
     'Preparing'
 
   return (
     <section
-      className={`processing-ring${failed ? ' is-failed' : ''}`}
+      className={`processing-ring${failed ? ' is-failed' : ' is-running'}`}
       aria-label="Processing progress"
     >
       <div className="processing-ring-overview">
-        <svg
-          className={`processing-ring-large${determinate || failed ? '' : ' is-indeterminate'}`}
-          width={CIRCLE_SIZE}
-          height={CIRCLE_SIZE}
-          viewBox="0 0 140 140"
-          role="img"
-          aria-label={
-            failed
-              ? `${activeLabel} failed`
-              : determinate
-                ? `${overallPercent}% complete`
-                : 'Progress is being prepared'
-          }
-        >
-          <circle className="processing-ring-track" cx="70" cy="70" r={CIRCLE_RADIUS} />
-          <circle
-            className="processing-ring-progress"
-            cx="70"
-            cy="70"
-            r={CIRCLE_RADIUS}
-            strokeDasharray={circumference}
-            strokeDashoffset={dashOffset}
-          />
-        </svg>
-        <span className="processing-ring-center" aria-hidden="true">
-          {failed ? '!' : determinate ? `${overallPercent}%` : '…'}
-        </span>
+        <div className="processing-ring-dial">
+          <svg
+            className={`processing-ring-large${determinate || failed ? '' : ' is-indeterminate'}`}
+            width={CIRCLE_SIZE}
+            height={CIRCLE_SIZE}
+            viewBox="0 0 140 140"
+            role="img"
+            aria-label={
+              failed
+                ? `${activeLabel} failed`
+                : determinate
+                  ? `${overallPercent}% complete`
+                  : 'Progress is being prepared'
+            }
+          >
+            <defs>
+              <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stopColor="#c4b5fd" />
+                <stop offset="55%" stopColor="#a78bfa" />
+                <stop offset="100%" stopColor="#f0abfc" />
+              </linearGradient>
+            </defs>
+            <circle className="processing-ring-track" cx="70" cy="70" r={CIRCLE_RADIUS} />
+            {!failed && (
+              <circle
+                className="processing-ring-sweep"
+                cx="70"
+                cy="70"
+                r={CIRCLE_RADIUS}
+                strokeDasharray={`${CIRCLE_LENGTH * 0.12} ${CIRCLE_LENGTH}`}
+              />
+            )}
+            <circle
+              className="processing-ring-progress"
+              cx="70"
+              cy="70"
+              r={CIRCLE_RADIUS}
+              stroke={failed ? undefined : `url(#${gradientId})`}
+              strokeDasharray={CIRCLE_LENGTH}
+              strokeDashoffset={dashOffset}
+            />
+          </svg>
+          <span className="processing-ring-center" aria-hidden="true">
+            {failed ? (
+              '!'
+            ) : determinate ? (
+              <>
+                {overallPercent}
+                <small>%</small>
+              </>
+            ) : (
+              <span className="processing-ring-dots">
+                <span />
+                <span />
+                <span />
+              </span>
+            )}
+          </span>
+        </div>
         <p className="processing-ring-current-stage" role="status" aria-live="polite">
           {failed ? `${activeLabel} failed` : activeLabel}
         </p>
         <p className="processing-ring-elapsed" aria-live="off">
-          Elapsed: {formatElapsed(Math.max(0, now - startedAt))}
+          {formatElapsed(Math.max(0, now - startedAt))} elapsed
         </p>
       </div>
 
@@ -143,16 +173,9 @@ function ProcessingRing({
                 className={`processing-ring-stage is-${status}`}
                 aria-current={status === 'active' ? 'step' : undefined}
               >
-                <SmallStageRing
-                  status={status}
-                  percent={status === 'active' ? percent : null}
-                />
-                <span>{stage.label}</span>
-                {status === 'active' && Number.isFinite(percent) && (
-                  <span className="processing-ring-stage-percent">
-                    {Math.round(percent)}%
-                  </span>
-                )}
+                <StageIcon status={status} />
+                <span className="processing-ring-stage-label">{stage.label}</span>
+                {status === 'active' && !failed && <StageBar percent={percent} />}
               </li>
             )
           })}

@@ -99,10 +99,10 @@ const LANGUAGE_OPTIONS = [
   ['swedish', 'Swedish'],
 ]
 const PROCESSING_STAGES = [
-  { id: 'loading-model', label: 'Loading model', weight: 25 },
-  { id: 'reading-audio', label: 'Reading your audio...', weight: 15 },
-  { id: 'transcribing', label: 'Transcribing', weight: 55 },
-  { id: 'finishing', label: 'Finishing', weight: 5 },
+  { id: 'loading-model', label: 'Preparing the speech model', weight: 25 },
+  { id: 'reading-audio', label: 'Pulling out the audio', weight: 15 },
+  { id: 'transcribing', label: 'Listening for words', weight: 55 },
+  { id: 'finishing', label: 'Arranging captions', weight: 5 },
 ]
 const CAPTION_FLOW_STEPS = [
   { number: 1, label: 'Video' },
@@ -206,22 +206,88 @@ function getLanguageLabel(language) {
 }
 
 function formatProgressDetail(progress, duration) {
+  const length = Number.isFinite(duration) && duration > 0 ? formatDuration(duration) : null
   if (progress?.stage === 'loading-model') {
-    const file = progress.file || 'Preparing model files'
-    const amount =
-      Number.isFinite(progress.loadedBytes) && Number.isFinite(progress.totalBytes)
-        ? `${(progress.loadedBytes / 1048576).toFixed(1)} of ${(progress.totalBytes / 1048576).toFixed(1)} MB`
-        : ''
-    return [file, amount, 'First run only; cached afterwards.'].filter(Boolean).join(' · ')
+    if (Number.isFinite(progress.loadedBytes) && Number.isFinite(progress.totalBytes)) {
+      const loaded = Math.round(progress.loadedBytes / 1048576)
+      const total = Math.round(progress.totalBytes / 1048576)
+      return loaded >= total
+        ? 'Model ready. Starting it up on your device.'
+        : `Downloading ${loaded} of ${total} MB. This happens once; next time it loads instantly.`
+    }
+    return 'Getting the speech model ready on your device.'
   }
   if (progress?.stage === 'reading-audio') {
-    return `${progress.detail || 'Reading your audio...'} · Length ${formatDuration(duration)}`
+    return length
+      ? `Extracting the soundtrack from your ${length} video.`
+      : 'Extracting the soundtrack from your video.'
   }
   if (progress?.stage === 'transcribing') {
-    return `Chunk ${progress.chunk ?? 0} of ${progress.total ?? 0} · ${formatDuration(progress.coveredSeconds ?? 0)} of ${formatDuration(duration)}`
+    const heard = formatDuration(progress.coveredSeconds ?? 0)
+    const total = progress.total ?? 0
+    if (!progress.completedChunks) {
+      return total > 1
+        ? `Listening to part 1 of ${total}. Words appear as each part finishes.`
+        : 'Listening to your video. Words appear when it finishes.'
+    }
+    return length
+      ? `Heard ${heard} of ${length} so far · part ${Math.min(progress.chunk ?? total, total)} of ${total}.`
+      : `Part ${Math.min(progress.chunk ?? total, total)} of ${total}.`
   }
-  if (progress?.stage === 'finishing') return 'Stitching words and arranging captions.'
+  if (progress?.stage === 'finishing') return 'Grouping words into readable captions.'
   return ''
+}
+
+function LiveTranscript({ words }) {
+  const textRef = useRef(null)
+  // Words from earlier parts stay put; only the newly heard batch types in.
+  const [storedSettledCount, setSettledCount] = useState(0)
+  // A retry restarts the transcript with fewer words; treat all as new.
+  const settledCount = words.length < storedSettledCount ? 0 : storedSettledCount
+  const newWordCount = Math.max(0, words.length - settledCount)
+  const stepMs = newWordCount > 0 ? Math.min(45, 1800 / newWordCount) : 0
+
+  useEffect(() => {
+    const element = textRef.current
+    if (element) element.scrollTop = element.scrollHeight
+    const timer = window.setTimeout(
+      () => setSettledCount(words.length),
+      newWordCount * stepMs + 450,
+    )
+    return () => window.clearTimeout(timer)
+  }, [newWordCount, stepMs, words.length])
+
+  return (
+    <div className="captions-live" aria-live="polite">
+      <p className="captions-live-label">
+        <span className="captions-live-dot" aria-hidden="true" />
+        {words.length > 0 ? `Heard so far · ${words.length} words` : 'Heard so far'}
+      </p>
+      {words.length > 0 ? (
+        <p className="captions-live-text" ref={textRef}>
+          {words.map((word, index) => (
+            <span
+              key={`${word.start}-${index}`}
+              className={index >= settledCount ? 'captions-live-word is-new' : 'captions-live-word'}
+              style={
+                index >= settledCount
+                  ? { '--word-delay': `${(index - settledCount) * stepMs}ms` }
+                  : undefined
+              }
+            >
+              {word.word}{' '}
+            </span>
+          ))}
+          <span className="captions-live-caret" aria-hidden="true" />
+        </p>
+      ) : (
+        <div className="captions-live-skeleton" aria-hidden="true">
+          <span />
+          <span />
+        </div>
+      )}
+    </div>
+  )
 }
 
 function CaptionStyleThumbnail({ style, selected, onSelect, disabled, fontsReady }) {
@@ -309,6 +375,7 @@ function Captions({ tool }) {
   const [openPanel, setOpenPanel] = useState(null)
   const [status, setStatus] = useState('idle')
   const [progress, setProgress] = useState(null)
+  const [liveWords, setLiveWords] = useState([])
   const [startedAt, setStartedAt] = useState(0)
   const [progressUpdatedAt, setProgressUpdatedAt] = useState(0)
   const [failedStage, setFailedStage] = useState(null)
@@ -1068,6 +1135,7 @@ function Captions({ tool }) {
   }
 
   function updateProgress(nextProgress) {
+    if (Array.isArray(nextProgress.partialWords)) setLiveWords(nextProgress.partialWords)
     const previousStage = progressRef.current?.stage
     progressRef.current = nextProgress
     setProgress(nextProgress)
@@ -1101,6 +1169,7 @@ function Captions({ tool }) {
     videoRef.current?.pause()
     setIsPlaying(false)
     setStatus('processing')
+    setLiveWords([])
     setProgress({ stage: 'loading-model', percent: null })
     progressRef.current = { stage: 'loading-model', percent: null }
     setStartedAt(now)
@@ -1463,6 +1532,21 @@ function Captions({ tool }) {
                           aria-hidden="true"
                         />
                       )}
+                      {status === 'processing' && (
+                        <div className="captions-listening-badge" aria-hidden="true">
+                          <span className="captions-listening-bars">
+                            <span />
+                            <span />
+                            <span />
+                            <span />
+                          </span>
+                          {progress?.stage === 'transcribing'
+                            ? 'Listening'
+                            : progress?.stage === 'finishing'
+                              ? 'Almost done'
+                              : 'Getting ready'}
+                        </div>
+                      )}
                       {previewProxyStatus === 'processing' && (
                         <div className="captions-preview-badge" role="status">
                           <span>
@@ -1577,7 +1661,13 @@ function Captions({ tool }) {
                     </div>
                     <span className="captions-count">{captions.length} total</span>
                   </div>
-                  {captions.length === 0 ? (
+                  {captions.length === 0 && status === 'processing' ? (
+                    <div className="captions-live-skeleton is-editor" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                  ) : captions.length === 0 ? (
                     <p className="captions-empty">
                       Create captions to see each timed line here.
                     </p>
@@ -1953,92 +2043,123 @@ function Captions({ tool }) {
 
                 {flowStep === 2 && (
                 <section className="tool-panel captions-transcription-panel" aria-label="Speech to captions">
-                  <h2>Speech to captions</h2>
-                  <p className="captions-model-note">
-                    The selected model downloads on its first run and is cached on this device.
-                  </p>
-                  {spokenLanguage && (
-                    <div className="captions-language-row">
-                      <p>
-                        Spoken language: <strong>{languageLabel}, detected</strong>
-                      </p>
-                      <button
-                        type="button"
-                        className="text-button"
-                        disabled={isProcessing}
-                        onClick={() => setShowLanguagePicker((visible) => !visible)}
-                      >
-                        Change
-                      </button>
+                  {status === 'processing' ? (
+                    <div className="captions-working">
+                      <div className="captions-working-heading">
+                        <h2>Creating your captions</h2>
+                        <p>
+                          {MODEL_OPTIONS.find((option) => option.value === model)?.label.split(' · ')[0]} model
+                          {' · '}
+                          {language === 'auto' ? 'Auto-detect language' : getLanguageLabel(language)}
+                          . Keep watching the preview while it works.
+                        </p>
+                      </div>
+                      <ProcessingRing
+                        stages={PROCESSING_STAGES}
+                        stageId={stageId}
+                        percent={progress?.percent ?? null}
+                        startedAt={startedAt}
+                        progressUpdatedAt={progressUpdatedAt}
+                        detail={progressDetail}
+                        failedStage={failedStage}
+                        onCancel={
+                          status === 'processing'
+                            ? () => abortControllerRef.current?.abort()
+                            : undefined
+                        }
+                      />
+                      <LiveTranscript words={liveWords} />
                     </div>
-                  )}
-                  {(!spokenLanguage || showLanguagePicker) && (
-                    <label className="captions-field" htmlFor="captions-language">
-                      Language
+                  ) : (
+                    <>
+                    <h2>Speech to captions</h2>
+                    <p className="captions-model-note">
+                      The selected model downloads on its first run and is cached on this device.
+                    </p>
+                    {spokenLanguage && (
+                      <div className="captions-language-row">
+                        <p>
+                          Spoken language: <strong>{languageLabel}, detected</strong>
+                        </p>
+                        <button
+                          type="button"
+                          className="text-button"
+                          disabled={isProcessing}
+                          onClick={() => setShowLanguagePicker((visible) => !visible)}
+                        >
+                          Change
+                        </button>
+                      </div>
+                    )}
+                    {(!spokenLanguage || showLanguagePicker) && (
+                      <label className="captions-field" htmlFor="captions-language">
+                        Language
+                        <select
+                          id="captions-language"
+                          value={language}
+                          disabled={isProcessing}
+                          onChange={(event) => setLanguage(event.target.value)}
+                        >
+                          {LANGUAGE_OPTIONS.map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <label className="captions-field" htmlFor="captions-model">
+                      Model
                       <select
-                        id="captions-language"
-                        value={language}
+                        id="captions-model"
+                        value={model}
                         disabled={isProcessing}
-                        onChange={(event) => setLanguage(event.target.value)}
+                        onChange={(event) => setModel(event.target.value)}
                       >
-                        {LANGUAGE_OPTIONS.map(([value, label]) => (
-                          <option key={value} value={value}>{label}</option>
+                        {MODEL_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
                         ))}
                       </select>
                     </label>
-                  )}
-                  <label className="captions-field" htmlFor="captions-model">
-                    Model
-                    <select
-                      id="captions-model"
-                      value={model}
+                    {shouldWarnAboutLongVideo && (
+                      <p className="captions-warning" role="status">
+                        Long videos can be slow and use a lot of memory. Close other tabs.
+                      </p>
+                    )}
+                    {status === 'error' && (
+                      <div className="captions-error" role="alert">
+                        <p className="tool-error">{error}</p>
+                        {technicalDetails && (
+                          <details>
+                            <summary>Details</summary>
+                            <pre>{technicalDetails}</pre>
+                          </details>
+                        )}
+                      </div>
+                    )}
+                    <Button
+                      variant={captions.length > 0 ? 'outline' : 'primary'}
+                      className="captions-transcribe-button"
                       disabled={isProcessing}
-                      onChange={(event) => setModel(event.target.value)}
+                      onClick={runTranscription}
                     >
-                      {MODEL_OPTIONS.map((option) => (
-                        <option key={option.value} value={option.value}>{option.label}</option>
-                      ))}
-                    </select>
-                  </label>
-                  {shouldWarnAboutLongVideo && (
-                    <p className="captions-warning" role="status">
-                      Long videos can be slow and use a lot of memory. Close other tabs.
-                    </p>
-                  )}
-                  {status === 'error' && (
-                    <div className="captions-error" role="alert">
-                      <p className="tool-error">{error}</p>
-                      {technicalDetails && (
-                        <details>
-                          <summary>Details</summary>
-                          <pre>{technicalDetails}</pre>
-                        </details>
+                      {actionLabel}
+                    </Button>
+                      {status === 'error' && (
+                        <ProcessingRing
+                          stages={PROCESSING_STAGES}
+                          stageId={stageId}
+                          percent={progress?.percent ?? null}
+                          startedAt={startedAt}
+                          progressUpdatedAt={progressUpdatedAt}
+                          detail={progressDetail}
+                          failedStage={failedStage}
+                          onCancel={
+                            status === 'processing'
+                              ? () => abortControllerRef.current?.abort()
+                              : undefined
+                          }
+                        />
                       )}
-                    </div>
-                  )}
-                  <Button
-                    variant={captions.length > 0 ? 'outline' : 'primary'}
-                    className="captions-transcribe-button"
-                    disabled={isProcessing}
-                    onClick={runTranscription}
-                  >
-                    {actionLabel}
-                  </Button>
-                  {(status === 'processing' || status === 'error') && (
-                    <ProcessingRing
-                      stages={PROCESSING_STAGES}
-                      stageId={stageId}
-                      percent={progress?.percent ?? null}
-                      startedAt={startedAt}
-                      progressUpdatedAt={progressUpdatedAt}
-                      detail={progressDetail}
-                      failedStage={failedStage}
-                      onCancel={
-                        status === 'processing'
-                          ? () => abortControllerRef.current?.abort()
-                          : undefined
-                      }
-                    />
+                    </>
                   )}
                 </section>
                 )}

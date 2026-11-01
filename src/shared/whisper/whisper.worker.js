@@ -57,6 +57,11 @@ async function loadTranscriber(modelId, device, requestId) {
     return loadedTranscriber
   }
 
+  // Transformers.js reports each file separately and also sends a
+  // `progress_total` event that sums every model file. Use the total so the
+  // UI shows one steadily rising number instead of restarting per file.
+  let lastTotal = null
+  let lastSentPercent = -1
   const transcriber = await pipeline(
     'automatic-speech-recognition',
     modelId,
@@ -64,13 +69,34 @@ async function loadTranscriber(modelId, device, requestId) {
       device,
       dtype: DTYPE_BY_DEVICE[device],
       progress_callback(progress) {
+        if (
+          progress.status === 'progress_total' &&
+          Number.isFinite(progress.loaded) &&
+          Number.isFinite(progress.total) &&
+          progress.total > 0
+        ) {
+          lastTotal = { loaded: progress.loaded, total: progress.total }
+        } else if (progress.status === 'progress') {
+          // Per-file events duplicate progress_total; skip the extra message.
+          return
+        }
+        const percent = lastTotal ? (lastTotal.loaded / lastTotal.total) * 100 : null
+        // progress_total fires thousands of times; send roughly every 0.5%.
+        if (
+          progress.status === 'progress_total' &&
+          percent !== null &&
+          percent < 100 &&
+          percent - lastSentPercent < 0.5
+        ) {
+          return
+        }
+        if (percent !== null) lastSentPercent = percent
         sendProgress(requestId, {
           stage: 'loading-model',
           backend: device,
-          percent: Number.isFinite(progress.progress) ? progress.progress : null,
-          file: progress.file ?? '',
-          loadedBytes: Number.isFinite(progress.loaded) ? progress.loaded : null,
-          totalBytes: Number.isFinite(progress.total) ? progress.total : null,
+          percent,
+          loadedBytes: lastTotal?.loaded ?? null,
+          totalBytes: lastTotal?.total ?? null,
           status: progress.status ?? '',
         })
       },
@@ -292,9 +318,12 @@ async function transcribe(request) {
         stage: 'transcribing',
         backend: device,
         percent: ((index + 1) / chunkCount) * 100,
-        chunk: index + 1,
+        chunk: Math.min(index + 2, chunkCount),
+        completedChunks: index + 1,
         total: chunkCount,
         coveredSeconds: end,
+        // Words heard so far, so the page can show a live transcript.
+        partialWords: stitchChunks(chunks),
       })
     }
 
