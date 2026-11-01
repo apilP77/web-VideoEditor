@@ -65,6 +65,9 @@ export function usePreviewFallback({ file, videoRef, waitBeforeFFmpeg, proxyLarg
   const timerRef = useRef(null)
   const availableForRef = useRef(null)
   const blackRetryForRef = useRef(null)
+  // Where playback was when the preview copy replaced the original, so the
+  // swap does not jump back to the start.
+  const resumeRef = useRef(null)
   const waitRef = useRef(waitBeforeFFmpeg)
   const proxyLargeRef = useRef(proxyLargeSources)
 
@@ -118,6 +121,10 @@ export function usePreviewFallback({ file, videoRef, waitBeforeFFmpeg, proxyLarg
         },
       })
       if (controller.signal.aborted) return
+      const video = videoRef.current
+      resumeRef.current = video
+        ? { time: video.currentTime || 0, playing: !video.paused && !video.ended }
+        : null
       setProxy({
         source: sourceFile,
         file: new File([output.blob], output.filename, {
@@ -238,6 +245,16 @@ export function usePreviewFallback({ file, videoRef, waitBeforeFFmpeg, proxyLarg
   const videoHandlers = {
     onLoadedMetadata(event) {
       const video = event.currentTarget
+      const src = video.currentSrc || video.getAttribute('src')
+      if (proxyUrl && src === proxyUrl && resumeRef.current) {
+        const { time, playing } = resumeRef.current
+        resumeRef.current = null
+        if (time > 0 && Number.isFinite(video.duration)) {
+          video.currentTime = Math.min(time, Math.max(0, video.duration - 0.05))
+        }
+        if (playing) video.play().catch(() => {})
+        return
+      }
       if (!isSourceEvent(video)) return
       if (video.videoWidth < 2 || video.videoHeight < 2) {
         markUnavailable(file, 'no picture dimensions', { videoWidth: video.videoWidth })
