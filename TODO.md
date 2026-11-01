@@ -83,24 +83,26 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Save recent transcripts in IndexedDB for 14 days and resume after refresh
 
 ## Phase 7: Caption engine (pure JS, no UI)
-- [ ] `groupWordsIntoLines(words, {min: 4, max: 5})` breaking on pauses and punctuation
-- [ ] Support caption pace of 1-3 words per line and up to two lines on screen
-- [ ] `getActiveWord(lines, time)` returns the current line and word index
-- [ ] Template data format (font, size, colors, stroke, highlight, position)
-- [ ] Five built-in styles: Classic, Minimal, Bold, Highlight, and Pill
-- [ ] Four caption animations: Bounce, Pop, Fade, and Reveal
-- [ ] Highlight color picker and automatic black/white text contrast for Pill
-- [ ] Flag potentially profane and often-misheard words for review
-- [ ] Unit tests for grouping and active-word lookup
+- [x] `layoutCaptions(words, pace)` breaks on pauses, punctuation, and pace limits
+- [x] Support one, two, three, five-word and sentence caption pace modes
+- [x] `getActiveCaption(captions, time)` and `getActiveWordIndex(caption, time)`
+- [x] Plain caption style model with font, size, colors, stroke, highlight, and position
+- [x] Eight built-in styles: Classic, Minimal, Bold, Highlight, Pill, Outline, Neon, and Block
+- [x] Eight time-based caption animations with pure easing functions
+- [x] Highlight color controls and automatic text contrast for Pill
+- [x] Flag potentially profane and often-misheard words for review
+- [x] Unit tests for layout, timing edits, styles, easing, and active-caption lookup
 
 ## Phase 8: Captions generator tool
-- [ ] Upload video, run transcription with progress
-- [ ] Live preview: `<video>` + caption overlay with highlighted active word
-- [ ] Style picker for Classic, Minimal, Bold, Highlight, and Pill
-- [ ] Edit transcript text while preserving word timing and re-group lines
-- [ ] Review flagged words before export
-- [ ] Customize pace (1-3 words per line, up to two lines, or 4-5 word preset)
-- [ ] Customize font size, position, highlight color, and animation (Bounce, Pop, Fade, Reveal)
+- [x] Upload video and run transcription with staged progress
+- [x] Live preview: `<video>` + shared canvas caption renderer
+- [x] Style picker for eight caption presets with live thumbnails
+- [x] Edit caption text while preserving proportional word timing
+- [x] Mark flagged words for review without changing their text
+- [x] Customize pace from one word to sentence captions
+- [x] Customize font, size, position, highlight color, background, stroke, and animation
+- [x] Show detected language and allow a language override
+- [x] Save and restore caption projects locally for 14 days
 - [ ] Export MP4 with captions burned in using FFmpeg
 - [ ] Export `.srt`, `.vtt`, and `.txt` alongside the video
 

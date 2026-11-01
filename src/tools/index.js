@@ -1,4 +1,5 @@
 import CropTrim from './crop-trim/CropTrim.jsx'
+import Captions from './captions/Captions.jsx'
 import Speed from './speed/Speed.jsx'
 import Transcript from './transcript/Transcript.jsx'
 
@@ -7,11 +8,11 @@ export const tools = [
   {
     id: 'captions',
     name: 'Captions generator',
-    description: 'Create styled, word-timed captions and export them with your video.',
+    description: 'Build timed captions and preview custom styles over your video.',
     icon: 'Captions',
-    accent: 'pink',
-    ready: false,
-    component: null,
+    accent: 'purple',
+    ready: true,
+    component: Captions,
   },
   {
     id: 'transcript',

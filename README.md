@@ -18,7 +18,7 @@ Inspired by "Oh So Simple" free video tools, with a focus on karaoke-style capti
 
 | # | Tool | Description |
 |---|------|-------------|
-| 1 | **Captions generator** | Auto-transcribes speech, edits timed words, controls subtitle pace and style, and exports burned-in MP4, SRT, VTT, or TXT |
+| 1 | **Captions generator** | Auto-transcribes speech, edits timed captions, and previews custom styles on video |
 | 2 | **Transcript generator** | Transcribes video or audio to an editable, timed transcript and exports `.txt`, `.srt`, or `.vtt` |
 | 3 | **Speed changer** | Change a video's speed, choose whether audio pitch stays natural, and preview the result |
 | 4 | **Batch captions** | Process several videos one at a time with shared settings and per-item review |
@@ -41,7 +41,7 @@ Blur faces (needs face-tracking ML), Record with teleprompter, Compress and batc
 | UI | React + Vite + Tailwind CSS (dark theme) |
 | Video processing | `@ffmpeg/ffmpeg` (FFmpeg.wasm) |
 | Speech to text | Whisper in the browser via `@huggingface/transformers` (Transformers.js), word-level timestamps |
-| Caption preview | HTML `<video>` + CSS/JS overlay |
+| Caption preview | HTML `<video>` + shared canvas caption renderer |
 | Caption export | Burn captions into MP4 with FFmpeg; export matching SRT, VTT, and TXT files |
 | Background work | Web Workers (FFmpeg and Whisper must never block the UI thread) |
 | Storage | IndexedDB for the batch queue and recent transcripts (14 days); model files cached by the browser |
@@ -85,15 +85,27 @@ result presentation.
 
 Every tool page must wrap its content in `ToolLayout` and use the shared
 `getMediaInfo(file)` helper for video dimensions, duration, and audio-track
-availability. Use the shared `ProcessingBar` for exports and `ResultCard` for
-completed results. Keep audio availability as `unknown` when inspection fails;
-the export must still work with optional audio mapping.
+availability. Use the shared `ProcessingRing` for staged work and
+`ResultCard` for completed exports. Keep audio availability as `unknown` when
+inspection fails; the export must still work with optional audio mapping.
 
 Add the component to `src/tools/index.js` with its metadata and set `ready: true`
 when it is finished. Only ready registry entries appear on the homepage.
 Use `ProcessingRing` for staged work and provide actual stage progress only;
-unknown progress remains indeterminate. The transcript ring weights model
-loading at 25%, audio decoding at 15%, transcription at 55%, and finishing at 5%.
+unknown progress remains indeterminate. The transcript and captions rings
+weight model loading at 25%, audio decoding at 15%, transcription at 55%, and
+finishing at 5%.
+
+### Caption engine and preview
+`src/shared/captions/engine.js` lays out timed transcript words into captions,
+supports pace selection and caption editing operations, and identifies words
+that may need review. The style model and easing functions live in
+`src/shared/captions/styles.js`; one canvas renderer in
+`src/shared/captions/renderer.js` draws the live preview and is shared with the
+planned export pipeline. Caption fonts are bundled locally so the preview does
+not request fonts from an external service. The Captions generator currently
+provides transcription, editing, styles, and live preview; video export is a
+separate follow-up.
 
 ### Folder structure
 
