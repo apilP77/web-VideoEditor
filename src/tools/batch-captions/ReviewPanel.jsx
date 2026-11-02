@@ -6,6 +6,7 @@ import { editCaptionText, getActiveCaption } from '../../shared/captions/engine.
 import { drawCaption } from '../../shared/captions/renderer.js'
 import { waitForCaptionFonts } from '../../shared/captions/styles.js'
 import { getMediaDuration } from '../../shared/media/duration.js'
+import { getPreviewSize } from '../../shared/media/previewProxy.js'
 import { usePreviewFallback } from '../../shared/media/usePreviewFallback.js'
 
 function formatClock(seconds) {
@@ -25,12 +26,40 @@ function formatClock(seconds) {
 function ReviewPanel({ file, captions, style, onCaptionChange, onClose }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
+  const frameRef = useRef(null)
   const preview = usePreviewFallback({ file, videoRef })
   const [fontsReady, setFontsReady] = useState(false)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
   const [frameVersion, setFrameVersion] = useState(0)
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
+  const [maxWidth, setMaxWidth] = useState(560)
+
+  // The video box must match the video's shape exactly, or the caption layer
+  // drawn over it is stretched. Same approach as the Captions tool.
+  useEffect(() => {
+    const frame = frameRef.current
+    if (!frame) return undefined
+    const update = () => setMaxWidth(frame.clientWidth)
+    update()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', update)
+      return () => window.removeEventListener('resize', update)
+    }
+    const observer = new ResizeObserver(update)
+    observer.observe(frame)
+    return () => observer.disconnect()
+  }, [])
+
+  const sourceWidth = dimensions.width || preview.sourceInfo?.width || 0
+  const sourceHeight = dimensions.height || preview.sourceInfo?.height || 0
+  const size = getPreviewSize(
+    sourceWidth,
+    sourceHeight,
+    maxWidth,
+    Math.min(440, window.innerHeight * 0.5),
+  )
 
   useEffect(() => {
     let active = true
@@ -106,15 +135,26 @@ function ReviewPanel({ file, captions, style, onCaptionChange, onClose }) {
   return (
     <div className="batch-review">
       <div className="batch-review-video">
+        <div ref={frameRef} className="captions-video-frame">
         <VideoPreview
           videoRef={videoRef}
           src={preview.previewUrl}
-          frameClassName="batch-review-stage"
+          frameClassName="captions-video-stage"
+          frameStyle={{
+            width: size.width || '100%',
+            height: size.height || undefined,
+            aspectRatio: sourceWidth && sourceHeight ? `${sourceWidth} / ${sourceHeight}` : undefined,
+          }}
+          videoClassName="captions-video"
           videoProps={{
             playsInline: true,
             preload: 'metadata',
             onLoadedMetadata: (event) => {
               preview.videoHandlers.onLoadedMetadata(event)
+              const { videoWidth, videoHeight } = event.currentTarget
+              if (videoWidth > 0 && videoHeight > 0) {
+                setDimensions({ width: videoWidth, height: videoHeight })
+              }
               setDuration(getMediaDuration(event.currentTarget.duration, preview.sourceInfo?.duration))
               setFrameVersion((version) => version + 1)
             },
@@ -132,7 +172,7 @@ function ReviewPanel({ file, captions, style, onCaptionChange, onClose }) {
             onPause: () => setIsPlaying(false),
           }}
         >
-          <canvas ref={canvasRef} className="batch-review-overlay" aria-hidden="true" />
+          <canvas ref={canvasRef} className="captions-overlay" aria-hidden="true" />
           {preview.showPoster && (
             <PreviewPoster
               fileName={file.name}
@@ -151,6 +191,7 @@ function ReviewPanel({ file, captions, style, onCaptionChange, onClose }) {
             <PreviewCopyBadge progress={preview.progress} onCancel={preview.cancelConversion} />
           )}
         </VideoPreview>
+        </div>
         <VideoPlayerControls
           currentTime={currentTime}
           duration={duration}
