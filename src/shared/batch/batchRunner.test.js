@@ -73,17 +73,15 @@ describe('createBatchRunner', () => {
     expect(statuses(runner)).toEqual(['done', 'done', 'done'])
   })
 
-  it('releases the file when an item is done but keeps it when it fails', async () => {
-    const runner = createBatchRunner({
-      process: async (item) => {
-        if (item.name === 'bad.mp4') throw new Error('nope')
-      },
-    })
-    runner.add([file('ok.mp4'), file('bad.mp4')])
+  it('keeps the file handle so a finished item can be exported or edited later', async () => {
+    const runner = createBatchRunner({ process: async () => ({ captions: [1] }) })
+    runner.add([file('ok.mp4')])
     await runner.start()
-    const [ok, bad] = runner.getState().items
-    expect(ok.file).toBeNull()
-    expect(bad.file).not.toBeNull()
+    const [item] = runner.getState().items
+    expect(item.file).not.toBeNull()
+    runner.updateResult(item.id, { captions: [1, 2] })
+    expect(runner.getState().items[0].result).toEqual({ captions: [1, 2] })
+    expect(runner.getState().items[0].status).toBe('done')
   })
 
   it('reports progress only for the running item', async () => {

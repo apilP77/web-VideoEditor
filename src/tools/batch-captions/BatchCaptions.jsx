@@ -1,10 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Button from '../../shared/components/Button.jsx'
 import UploadBox from '../../shared/components/UploadBox.jsx'
 import ToolLayout from '../../shared/components/ToolLayout.jsx'
 import { useBatchRunner } from '../../shared/batch/useBatchRunner.js'
 import { createCaptionsForFile } from '../../shared/batch/captionJob.js'
-import { CAPTION_PACES } from '../../shared/captions/engine.js'
+import { renderCaptionedVideo } from '../../shared/batch/renderJob.js'
+import { CAPTION_PACES, editCaptionText } from '../../shared/captions/engine.js'
+import { drawCaption } from '../../shared/captions/renderer.js'
+import { CAPTION_PRESETS, createCaptionStyle, waitForCaptionFonts } from '../../shared/captions/styles.js'
 import { LANGUAGE_OPTIONS, MODEL_OPTIONS } from '../../shared/captions/options.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import { isVideoFile } from '../../shared/utils/mediaFiles.js'
@@ -41,6 +44,85 @@ function formatLength(seconds) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }
 
+const SAMPLE_CAPTION = {
+  start: 0,
+  end: 2.5,
+  text: 'Your captions look like this',
+  words: ['Your', 'captions', 'look', 'like', 'this'].map((word, index) => ({
+    word,
+    start: index * 0.5,
+    end: (index + 1) * 0.5,
+  })),
+}
+
+/** Draws a sample caption so the shared style can be judged before exporting. */
+function StylePreview({ style }) {
+  const canvasRef = useRef(null)
+
+  useEffect(() => {
+    let active = true
+    waitForCaptionFonts()
+      .catch(() => {})
+      .then(() => {
+        const canvas = canvasRef.current
+        const context = canvas?.getContext('2d')
+        if (!active || !context) return
+        const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height)
+        gradient.addColorStop(0, '#2b2540')
+        gradient.addColorStop(1, '#14111c')
+        context.fillStyle = gradient
+        context.fillRect(0, 0, canvas.width, canvas.height)
+        drawCaption(context, SAMPLE_CAPTION, 1.2, style, canvas.width, canvas.height)
+      })
+    return () => {
+      active = false
+    }
+  }, [style])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      className="batch-style-preview"
+      width={640}
+      height={360}
+      role="img"
+      aria-label="Sample of the chosen caption style"
+    />
+  )
+}
+
+/** Lets each caption's text be corrected; timing is spread evenly over the same range. */
+function CaptionEditor({ captions, onChange }) {
+  return (
+    <ol className="batch-caption-editor">
+      {captions.map((caption, index) => {
+        const text = caption.text ?? caption.words.map((word) => word.word).join(' ')
+        return (
+          <li key={`${index}-${caption.start}-${text}`}>
+            <span className="batch-caption-time">{formatLength(caption.start) || '0:00'}</span>
+            <input
+              type="text"
+              defaultValue={text}
+              aria-label={`Caption ${index + 1}`}
+              onBlur={(event) => {
+                const value = event.target.value.trim()
+                if (!value) {
+                  event.target.value = text
+                } else if (value !== text) {
+                  onChange(index, editCaptionText(caption, value))
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') event.currentTarget.blur()
+              }}
+            />
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
 /**
  * Captions several videos in one queue with shared speech settings.
  *
@@ -54,6 +136,9 @@ function BatchCaptions({ tool }) {
   const [language, setLanguage] = useState('auto')
   const [pace, setPace] = useState(5)
   const [notice, setNotice] = useState('')
+  const [presetId, setPresetId] = useState(CAPTION_PRESETS[0].id)
+  const [editingId, setEditingId] = useState(null)
+  const style = createCaptionStyle(presetId)
 
   const { runner, items, running } = useBatchRunner((item, context) =>
     createCaptionsForFile(item.file, {
@@ -62,13 +147,27 @@ function BatchCaptions({ tool }) {
       pace,
       signal: context.signal,
       onProgress: context.onProgress,
-    }).then(({ words, captions, language: detected }) => ({
-      wordCount: words.length,
+    }).then(({ captions, language: detected }) => ({
       captionCount: captions.length,
       language: detected,
-      words,
       captions,
     })),
+  )
+
+  // Videos are rendered one at a time and saved straight away, so only one
+  // finished video is ever held in memory.
+  const { runner: renderRunner, items: renderItems, running: rendering } = useBatchRunner(
+    async (renderItem, context) => {
+      const source = runner.getState().items.find((item) => item.file === renderItem.file)
+      const output = await renderCaptionedVideo(
+        renderItem.file,
+        source?.result?.captions,
+        style,
+        { signal: context.signal, onProgress: context.onProgress },
+      )
+      saveBlob(output.blob, output.filename)
+      return { filename: output.filename, processedWith: output.processedWith }
+    },
   )
 
   const queued = items.filter((item) => item.status === 'queued').length
@@ -78,6 +177,33 @@ function BatchCaptions({ tool }) {
   function downloadSubtitle(item, extension) {
     const file = buildSubtitleFile(item.name, item.result.captions, extension)
     saveBlob(new Blob([file.data], { type: file.mimeType }), file.name)
+  }
+
+  function renderOf(item) {
+    return renderItems.find((entry) => entry.file === item.file)
+  }
+
+  function exportVideo(item) {
+    const existing = renderOf(item)
+    if (existing) renderRunner.remove(existing.id)
+    renderRunner.add([item.file])
+    renderRunner.start()
+  }
+
+  function exportAllVideos() {
+    for (const item of items) {
+      if (item.status !== 'done') continue
+      const existing = renderOf(item)
+      if (existing?.status === 'done' || existing?.status === 'queued' || existing?.status === 'running') continue
+      if (existing) renderRunner.remove(existing.id)
+      renderRunner.add([item.file])
+    }
+    renderRunner.start()
+  }
+
+  function changeCaption(item, index, caption) {
+    const captions = item.result.captions.map((entry, position) => (position === index ? caption : entry))
+    runner.updateResult(item.id, { ...item.result, captions })
   }
 
   function downloadAll() {
@@ -164,6 +290,26 @@ function BatchCaptions({ tool }) {
           </div>
         </section>
 
+        <section className="batch-style tool-panel" aria-label="Caption style for every video">
+          <h2>Caption style</h2>
+          <div className="batch-style-body">
+            <StylePreview style={style} />
+            <label className="captions-field" htmlFor="batch-style">
+              Style
+              <select
+                id="batch-style"
+                value={presetId}
+                disabled={rendering}
+                onChange={(event) => setPresetId(event.target.value)}
+              >
+                {CAPTION_PRESETS.map((preset) => (
+                  <option key={preset.id} value={preset.id}>{preset.name}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+        </section>
+
         <section className="batch-upload" aria-label="Add videos">
           <UploadBox
             multiple
@@ -199,8 +345,17 @@ function BatchCaptions({ tool }) {
                       </Button>
                     )}
                     {done > 0 && (
-                      <Button variant={queued > 0 ? 'outline' : 'primary'} onClick={downloadAll}>
-                        Download all ({done}) as ZIP
+                      <Button variant="outline" onClick={downloadAll}>
+                        Subtitles ZIP ({done})
+                      </Button>
+                    )}
+                    {done > 0 && (
+                      <Button
+                        variant={queued > 0 ? 'outline' : 'primary'}
+                        disabled={rendering}
+                        onClick={exportAllVideos}
+                      >
+                        Export all {done} videos
                       </Button>
                     )}
                   </>
@@ -234,6 +389,24 @@ function BatchCaptions({ tool }) {
                     )}
                   </div>
                   <div className="batch-item-actions">
+                    {item.status === 'done' && item.result?.captions && (
+                      <>
+                        <button
+                          type="button"
+                          aria-expanded={editingId === item.id}
+                          onClick={() => setEditingId(editingId === item.id ? null : item.id)}
+                        >
+                          {editingId === item.id ? 'Close' : 'Edit words'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={running || renderOf(item)?.status === 'running'}
+                          onClick={() => exportVideo(item)}
+                        >
+                          Export video
+                        </button>
+                      </>
+                    )}
                     {item.status === 'done' && item.result?.captions &&
                       SUBTITLE_FORMATS.map((format) => (
                         <button
@@ -256,6 +429,40 @@ function BatchCaptions({ tool }) {
                       Remove
                     </button>
                   </div>
+                  {(() => {
+                    const render = item.status === 'done' ? renderOf(item) : null
+                    if (!render) return null
+                    if (render.status === 'failed') {
+                      return (
+                        <div className="batch-item-error" role="alert">
+                          <p>Could not export this video: {render.error}</p>
+                          {render.technicalDetails && (
+                            <details>
+                              <summary>Details</summary>
+                              <pre>{render.technicalDetails}</pre>
+                            </details>
+                          )}
+                        </div>
+                      )
+                    }
+                    return (
+                      <p className="batch-render-status" role="status">
+                        {render.status === 'done'
+                          ? `Video saved as ${render.result?.filename ?? 'a file'}`
+                          : render.status === 'running'
+                            ? `${render.stage || 'Adding captions'}${render.percent !== null ? ` · ${render.percent}%` : ''}`
+                            : render.status === 'queued'
+                              ? 'Waiting to export'
+                              : 'Export stopped'}
+                      </p>
+                    )
+                  })()}
+                  {editingId === item.id && item.result?.captions && (
+                    <CaptionEditor
+                      captions={item.result.captions}
+                      onChange={(index, caption) => changeCaption(item, index, caption)}
+                    />
+                  )}
                   {item.error && (
                     <div className="batch-item-error" role="alert">
                       <p>{item.error}</p>

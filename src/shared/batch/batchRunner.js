@@ -1,6 +1,7 @@
 /**
- * Shared batch queue: runs one job at a time, keeps going after a failure,
- * and holds no media in memory once an item has finished.
+ * Shared batch queue: runs one job at a time and keeps going after a failure.
+ * It keeps only each item's `File` handle (which points at the file on disk,
+ * not its bytes) and small result data, never decoded media.
  *
  * It knows nothing about captions or React. A tool supplies a `process`
  * function and reads state through `subscribe`.
@@ -17,7 +18,7 @@ export const BATCH_LIMITS = Object.freeze({
 /**
  * @typedef {object} BatchItem
  * @property {number} id Stable id for lists and retries.
- * @property {File | null} file Source file. Dropped when the item is done.
+ * @property {File | null} file Source file handle. Null only for items restored from storage.
  * @property {string} name File name, kept after the file is released.
  * @property {number} size Size in bytes.
  * @property {number | null} duration Seconds, once known.
@@ -87,6 +88,7 @@ function createAbortError() {
  *   stop: () => void,
  *   setDuration: (id: number, seconds: number) => void,
  *   setProcess: (next: typeof process) => void,
+ *   updateResult: (id: number, result: unknown) => void,
  *   restore: (items: Partial<BatchItem>[]) => void,
  *   clear: () => void,
  * }} Runner API.
@@ -177,8 +179,7 @@ export function createBatchRunner({ process, limits = BATCH_LIMITS }) {
         },
       })
       if (controller.signal.aborted) throw createAbortError()
-      // The file is released so a long batch does not keep every video alive.
-      update(item.id, { status: 'done', percent: 100, stage: '', result, file: null })
+      update(item.id, { status: 'done', percent: 100, stage: '', result })
     } catch (error) {
       if (error?.name === 'AbortError' || controller.signal.aborted) {
         if (items.some((candidate) => candidate.id === item.id)) {
@@ -236,6 +237,9 @@ export function createBatchRunner({ process, limits = BATCH_LIMITS }) {
     stop() {
       stopping = true
       current?.controller.abort()
+    },
+    updateResult(id, result) {
+      update(id, { result })
     },
     setProcess(next) {
       handler = next
