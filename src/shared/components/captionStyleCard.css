@@ -1,0 +1,36 @@
+.caption-style-card {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  border: 1px solid #403a4b;
+  border-radius: 9px;
+  padding: 6px;
+  background: #14121a;
+  color: #d7d0e2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.caption-style-card:hover:not(:disabled),
+.caption-style-card.is-selected {
+  border-color: #a78bfa;
+  background: #211b2c;
+}
+
+.caption-style-card:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+.caption-style-card canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 5px;
+  background: #08070b;
+}
+
+.caption-style-card span {
+  font-size: 0.76rem;
+  font-weight: 600;
+}

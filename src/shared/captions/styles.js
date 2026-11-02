@@ -1,3 +1,15 @@
+/** Sample caption drawn on style cards. */
+export const PREVIEW_CAPTION = {
+  start: 0,
+  end: 3,
+  words: [
+    { word: 'Make', start: 0, end: 0.6 },
+    { word: 'every', start: 0.6, end: 1.2 },
+    { word: 'moment', start: 1.2, end: 2 },
+    { word: 'count.', start: 2, end: 2.8 },
+  ],
+}
+
 export const CAPTION_PRESETS = [
   {
     id: 'classic',

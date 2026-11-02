@@ -1,12 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import Button from '../../shared/components/Button.jsx'
+import CaptionStyleCard from '../../shared/components/CaptionStyleCard.jsx'
 import UploadBox from '../../shared/components/UploadBox.jsx'
 import ToolLayout from '../../shared/components/ToolLayout.jsx'
 import { useBatchRunner } from '../../shared/batch/useBatchRunner.js'
 import { createCaptionsForFile } from '../../shared/batch/captionJob.js'
 import { renderCaptionedVideo } from '../../shared/batch/renderJob.js'
 import { CAPTION_PACES } from '../../shared/captions/engine.js'
-import { drawCaption } from '../../shared/captions/renderer.js'
 import { CAPTION_PRESETS, createCaptionStyle, waitForCaptionFonts } from '../../shared/captions/styles.js'
 import { LANGUAGE_OPTIONS, MODEL_OPTIONS } from '../../shared/captions/options.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
@@ -45,63 +45,6 @@ function formatLength(seconds) {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }
 
-const SAMPLE_CAPTION = {
-  start: 0,
-  end: 1.5,
-  text: 'Example caption',
-  words: [
-    { word: 'Example', start: 0, end: 0.75 },
-    { word: 'caption', start: 0.75, end: 1.5 },
-  ],
-}
-
-/** One style card: an example caption drawn in that style, click to choose. */
-function StyleCard({ preset, selected, disabled, onSelect }) {
-  const canvasRef = useRef(null)
-
-  useEffect(() => {
-    let active = true
-    waitForCaptionFonts()
-      .catch(() => {})
-      .then(() => {
-        const canvas = canvasRef.current
-        const context = canvas?.getContext('2d')
-        if (!active || !context) return
-        const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height)
-        gradient.addColorStop(0, '#3a3354')
-        gradient.addColorStop(1, '#16131f')
-        context.fillStyle = gradient
-        context.fillRect(0, 0, canvas.width, canvas.height)
-        // One second in, the second word is the active one, so each style's
-        // highlight colour shows against its normal text colour.
-        drawCaption(
-          context,
-          SAMPLE_CAPTION,
-          1,
-          createCaptionStyle(preset.id),
-          canvas.width,
-          canvas.height,
-        )
-      })
-    return () => {
-      active = false
-    }
-  }, [preset.id])
-
-  return (
-    <button
-      type="button"
-      className={`batch-style-card${selected ? ' is-selected' : ''}`}
-      aria-pressed={selected}
-      disabled={disabled}
-      onClick={() => onSelect(preset.id)}
-    >
-      <canvas ref={canvasRef} width={480} height={270} aria-hidden="true" />
-      <span>{preset.name}</span>
-    </button>
-  )
-}
-
 /**
  * Captions several videos in one queue with shared speech settings.
  *
@@ -118,6 +61,19 @@ function BatchCaptions({ tool }) {
   const [presetId, setPresetId] = useState(CAPTION_PRESETS[0].id)
   const [editingId, setEditingId] = useState(null)
   const style = createCaptionStyle(presetId)
+  const [fontsReady, setFontsReady] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    waitForCaptionFonts()
+      .catch(() => {})
+      .then(() => {
+        if (active) setFontsReady(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const { runner, items, running } = useBatchRunner((item, context) =>
     createCaptionsForFile(item.file, {
@@ -276,12 +232,13 @@ function BatchCaptions({ tool }) {
           </p>
           <div className="batch-style-grid" role="group" aria-label="Caption styles">
             {CAPTION_PRESETS.map((preset) => (
-              <StyleCard
+              <CaptionStyleCard
                 key={preset.id}
-                preset={preset}
+                style={createCaptionStyle(preset.id)}
                 selected={preset.id === presetId}
                 disabled={rendering}
-                onSelect={setPresetId}
+                fontsReady={fontsReady}
+                onSelect={() => setPresetId(preset.id)}
               />
             ))}
           </div>

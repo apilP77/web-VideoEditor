@@ -149,49 +149,9 @@
 
 .batch-style-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
   gap: 10px;
   margin-top: 12px;
-}
-
-.batch-style-card {
-  display: grid;
-  gap: 6px;
-  border: 2px solid #302b3b;
-  border-radius: 10px;
-  padding: 6px;
-  background: #15121b;
-  color: #d9d2e6;
-  font: inherit;
-  font-size: 0.8rem;
-  text-align: center;
-  cursor: pointer;
-}
-
-.batch-style-card canvas {
-  width: 100%;
-  height: auto;
-  border-radius: 6px;
-}
-
-.batch-style-card:hover:not(:disabled) {
-  border-color: #6d4fc2;
-}
-
-.batch-style-card.is-selected {
-  border-color: #a78bfa;
-  background: #231b33;
-  color: #f5f2fa;
-}
-
-.batch-style-card:focus-visible {
-  outline: 2px solid #c4b5fd;
-  outline-offset: 2px;
-}
-
-.batch-style-card:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
 }
 
 .batch-render-status {
