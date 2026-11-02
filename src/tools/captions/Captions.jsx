@@ -46,6 +46,7 @@ import {
   splitCaption,
 } from '../../shared/captions/engine.js'
 import { canOpenCaptionStep } from '../../shared/captions/workflow.js'
+import { LANGUAGE_OPTIONS, MODEL_OPTIONS } from '../../shared/captions/options.js'
 import {
   getCaptionExportFilename,
   getCaptionExportWords,
@@ -73,32 +74,6 @@ import {
 } from '../../shared/whisper/whisperClient.js'
 import './captions.css'
 
-const MODEL_OPTIONS = [
-  { value: 'fast', label: 'Fast · tiny · about 60–200 MB' },
-  { value: 'balanced', label: 'Balanced · base · about 110–360 MB' },
-  { value: 'accurate', label: 'Accurate · small · about 300 MB–1 GB' },
-]
-const LANGUAGE_OPTIONS = [
-  ['auto', 'Auto-detect'],
-  ['english', 'English'],
-  ['spanish', 'Spanish'],
-  ['french', 'French'],
-  ['german', 'German'],
-  ['italian', 'Italian'],
-  ['portuguese', 'Portuguese'],
-  ['dutch', 'Dutch'],
-  ['russian', 'Russian'],
-  ['japanese', 'Japanese'],
-  ['korean', 'Korean'],
-  ['chinese', 'Chinese'],
-  ['arabic', 'Arabic'],
-  ['hindi', 'Hindi'],
-  ['turkish', 'Turkish'],
-  ['ukrainian', 'Ukrainian'],
-  ['vietnamese', 'Vietnamese'],
-  ['thai', 'Thai'],
-  ['swedish', 'Swedish'],
-]
 const PROCESSING_STAGES = [
   { id: 'loading-model', label: 'Preparing the speech model', weight: 25 },
   { id: 'reading-audio', label: 'Pulling out the audio', weight: 15 },
