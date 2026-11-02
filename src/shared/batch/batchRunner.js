@@ -90,6 +90,7 @@ function createAbortError() {
  *   setProcess: (next: typeof process) => void,
  *   updateResult: (id: number, result: unknown) => void,
  *   restore: (items: Partial<BatchItem>[]) => void,
+ *   attachFiles: (files: File[]) => {attached: number, unmatched: File[]},
  *   clear: () => void,
  * }} Runner API.
  */
@@ -262,6 +263,35 @@ export function createBatchRunner({ process, limits = BATCH_LIMITS }) {
         result: entry.result ?? null,
       }))
       publish()
+    },
+    attachFiles(files) {
+      // Give restored items their video back, matched by name and size.
+      const unmatched = []
+      let attached = 0
+      for (const file of files) {
+        const target = items.find(
+          (item) => !item.file && item.name === file.name && item.size === file.size,
+        )
+        if (!target) {
+          unmatched.push(file)
+          continue
+        }
+        attached += 1
+        items = items.map((item) =>
+          item.id === target.id
+            ? {
+                ...item,
+                file,
+                // Unfinished items go back in the queue; finished ones keep their captions.
+                ...(item.status === 'done'
+                  ? {}
+                  : { status: 'queued', error: '', technicalDetails: '' }),
+              }
+            : item,
+        )
+      }
+      if (attached > 0) publish()
+      return { attached, unmatched }
     },
     clear() {
       current?.controller.abort()

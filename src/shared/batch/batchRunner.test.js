@@ -196,6 +196,29 @@ describe('createBatchRunner', () => {
     expect(used).toEqual(['new'])
   })
 
+  it('re-attaches dropped files to restored items by name and size', async () => {
+    const runner = createBatchRunner({ process: async () => 'redone' })
+    runner.restore([
+      { name: 'done.mp4', size: 1000, status: 'done', result: { captions: [1] } },
+      { name: 'half.mp4', size: 1000, status: 'running' },
+    ])
+    const { attached, unmatched } = runner.attachFiles([
+      file('done.mp4', 1000),
+      file('half.mp4', 1000),
+      file('other.mp4', 1000),
+      file('done.mp4', 999), // same name, different size: not the same video
+    ])
+    expect(attached).toBe(2)
+    expect(unmatched.map((entry) => entry.name)).toEqual(['other.mp4', 'done.mp4'])
+    const [done, half] = runner.getState().items
+    expect(done.status).toBe('done')
+    expect(done.file).not.toBeNull()
+    expect(done.result).toEqual({ captions: [1] })
+    expect(half.status).toBe('queued')
+    await runner.start()
+    expect(statuses(runner)).toEqual(['done', 'done'])
+  })
+
   it('notifies subscribers and restores finished items without files', () => {
     const runner = createBatchRunner({ process: async () => {} })
     const listener = vi.fn()
