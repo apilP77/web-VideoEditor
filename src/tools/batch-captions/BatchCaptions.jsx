@@ -15,6 +15,7 @@ import { isVideoFile } from '../../shared/utils/mediaFiles.js'
 import { buildAllSubtitleFiles, buildSubtitleFile, SUBTITLE_FORMATS } from '../../shared/batch/subtitleFiles.js'
 import { createZip } from '../../shared/utils/zip.js'
 import { clearBatch, loadBatch, saveBatch, serializeBatch } from '../../shared/storage/batchStorage.js'
+import { loadPresets, removePreset, savePresets, upsertPreset } from '../../shared/storage/batchPresets.js'
 import ReviewPanel from './ReviewPanel.jsx'
 import './batchCaptions.css'
 
@@ -66,6 +67,9 @@ function BatchCaptions({ tool }) {
   const [fontsReady, setFontsReady] = useState(false)
   const [savedBatch, setSavedBatch] = useState(null)
   const hadItemsRef = useRef(false)
+  const [presets, setPresets] = useState(loadPresets)
+  const [presetName, setPresetName] = useState('')
+  const [appliedPreset, setAppliedPreset] = useState('')
 
   useEffect(() => {
     let active = true
@@ -183,6 +187,32 @@ function BatchCaptions({ tool }) {
     saveBlob(createZip(buildAllSubtitleFiles(items)), 'batch-captions.zip')
   }
 
+  function savePreset() {
+    const next = upsertPreset(presets, { name: presetName, presetId, model, language, pace })
+    if (next === presets) return
+    setPresets(next)
+    savePresets(next)
+    setAppliedPreset(next[0].name)
+    setPresetName('')
+  }
+
+  function applyPreset(name) {
+    setAppliedPreset(name)
+    const saved = presets.find((entry) => entry.name === name)
+    if (!saved) return
+    if (CAPTION_PRESETS.some((preset) => preset.id === saved.presetId)) setPresetId(saved.presetId)
+    if (MODEL_OPTIONS.some((option) => option.value === saved.model)) setModel(saved.model)
+    if (LANGUAGE_OPTIONS.some(([value]) => value === saved.language)) setLanguage(saved.language)
+    if (CAPTION_PACES.some((option) => option.value === saved.pace)) setPace(saved.pace)
+  }
+
+  function deletePreset() {
+    const next = removePreset(presets, appliedPreset)
+    setPresets(next)
+    savePresets(next)
+    setAppliedPreset('')
+  }
+
   function restoreBatch() {
     if (!savedBatch) return
     const saved = savedBatch.settings ?? {}
@@ -245,6 +275,48 @@ function BatchCaptions({ tool }) {
       <div className="media-tool-app batch-captions">
         <section className="batch-settings tool-panel" aria-label="Caption settings for every video">
           <h2>Settings for every video</h2>
+          <div className="batch-presets">
+            {presets.length > 0 && (
+              <>
+                <label className="captions-field" htmlFor="batch-saved-settings">
+                  Saved settings
+                  <select
+                    id="batch-saved-settings"
+                    value={appliedPreset}
+                    disabled={running || rendering}
+                    onChange={(event) => applyPreset(event.target.value)}
+                  >
+                    <option value="">Choose…</option>
+                    {presets.map((entry) => (
+                      <option key={entry.name} value={entry.name}>{entry.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <Button
+                  variant="outline"
+                  disabled={!appliedPreset || running || rendering}
+                  onClick={deletePreset}
+                >
+                  Delete
+                </Button>
+              </>
+            )}
+            <label className="captions-field" htmlFor="batch-preset-name">
+              Save these settings as
+              <input
+                id="batch-preset-name"
+                type="text"
+                maxLength={40}
+                value={presetName}
+                placeholder="For example: Podcast clips"
+                onChange={(event) => setPresetName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') savePreset()
+                }}
+              />
+            </label>
+            <Button variant="outline" disabled={!presetName.trim()} onClick={savePreset}>Save</Button>
+          </div>
           <div className="batch-settings-grid">
             <label className="captions-field" htmlFor="batch-model">
               Model

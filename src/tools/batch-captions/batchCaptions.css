@@ -12,6 +12,28 @@
   margin-top: 12px;
 }
 
+.batch-presets {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.batch-presets .captions-field {
+  flex: 1 1 200px;
+}
+
+.batch-presets input {
+  min-height: 44px;
+  border: 1px solid #3a3347;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #0f0d14;
+  color: #f2eef8;
+  font: inherit;
+}
+
 .batch-upload {
   display: grid;
   gap: 12px;
