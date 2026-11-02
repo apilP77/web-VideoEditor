@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../shared/components/Button.jsx'
 import CaptionStyleCard from '../../shared/components/CaptionStyleCard.jsx'
 import UploadBox from '../../shared/components/UploadBox.jsx'
@@ -62,7 +62,7 @@ function BatchCaptions({ tool }) {
   const [notice, setNotice] = useState('')
   const [presetId, setPresetId] = useState(CAPTION_PRESETS[0].id)
   const [editingId, setEditingId] = useState(null)
-  const style = createBatchCaptionStyle(presetId)
+  const style = useMemo(() => createBatchCaptionStyle(presetId), [presetId])
   const [fontsReady, setFontsReady] = useState(false)
   const [savedBatch, setSavedBatch] = useState(null)
   const hadItemsRef = useRef(false)
@@ -301,6 +301,7 @@ function BatchCaptions({ tool }) {
               <CaptionStyleCard
                 key={preset.id}
                 style={createBatchCaptionStyle(preset.id)}
+                label={preset.name}
                 selected={preset.id === presetId}
                 disabled={rendering}
                 fontsReady={fontsReady}
