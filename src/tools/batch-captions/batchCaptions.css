@@ -273,3 +273,15 @@
     transition: none;
   }
 }
+
+.batch-restore {
+  display: grid;
+  gap: 12px;
+}
+
+.batch-restore p {
+  margin: 0;
+  color: #d7d0e2;
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
