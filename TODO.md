@@ -141,7 +141,7 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Persist queue and results in IndexedDB (serialization unit tested; refresh and restore not yet confirmed in a browser)
 - [x] Download results as a ZIP (subtitle ZIP; unit tests for the ZIP writer)
 - [x] Free memory between items (finished items drop decoded media; videos are rendered and saved one at a time)
-- [ ] Verify Batch captions on the 127 MB 4K HEVC `Momo.mp4` in Brave (the preview was blank on it)
+- [ ] Brave with 4K HEVC (parked): the preview was blank because the browser cannot decode the picture; the preview copy now falls back to FFmpeg (slow on 4K), not yet confirmed. Exporting captions in Brave still needs an FFmpeg path.
 
 ## Phase 10: Batch captions tool
 - [x] Use the shared batch runner for multi-file caption jobs
