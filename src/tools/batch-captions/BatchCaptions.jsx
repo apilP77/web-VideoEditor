@@ -47,17 +47,16 @@ function formatLength(seconds) {
 
 const SAMPLE_CAPTION = {
   start: 0,
-  end: 2.5,
-  text: 'Your captions look like this',
-  words: ['Your', 'captions', 'look', 'like', 'this'].map((word, index) => ({
-    word,
-    start: index * 0.5,
-    end: (index + 1) * 0.5,
-  })),
+  end: 1.5,
+  text: 'Example caption',
+  words: [
+    { word: 'Example', start: 0, end: 0.75 },
+    { word: 'caption', start: 0.75, end: 1.5 },
+  ],
 }
 
-/** Draws a sample caption so the shared style can be judged before exporting. */
-function StylePreview({ style }) {
+/** One style card: an example caption drawn in that style, click to choose. */
+function StyleCard({ preset, selected, disabled, onSelect }) {
   const canvasRef = useRef(null)
 
   useEffect(() => {
@@ -69,26 +68,37 @@ function StylePreview({ style }) {
         const context = canvas?.getContext('2d')
         if (!active || !context) return
         const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height)
-        gradient.addColorStop(0, '#2b2540')
-        gradient.addColorStop(1, '#14111c')
+        gradient.addColorStop(0, '#3a3354')
+        gradient.addColorStop(1, '#16131f')
         context.fillStyle = gradient
         context.fillRect(0, 0, canvas.width, canvas.height)
-        drawCaption(context, SAMPLE_CAPTION, 1.2, style, canvas.width, canvas.height)
+        // One second in, the second word is the active one, so each style's
+        // highlight colour shows against its normal text colour.
+        drawCaption(
+          context,
+          SAMPLE_CAPTION,
+          1,
+          createCaptionStyle(preset.id),
+          canvas.width,
+          canvas.height,
+        )
       })
     return () => {
       active = false
     }
-  }, [style])
+  }, [preset.id])
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="batch-style-preview"
-      width={640}
-      height={360}
-      role="img"
-      aria-label="Sample of the chosen caption style"
-    />
+    <button
+      type="button"
+      className={`batch-style-card${selected ? ' is-selected' : ''}`}
+      aria-pressed={selected}
+      disabled={disabled}
+      onClick={() => onSelect(preset.id)}
+    >
+      <canvas ref={canvasRef} width={480} height={270} aria-hidden="true" />
+      <span>{preset.name}</span>
+    </button>
   )
 }
 
@@ -261,21 +271,19 @@ function BatchCaptions({ tool }) {
 
         <section className="batch-style tool-panel" aria-label="Caption style for every video">
           <h2>Caption style</h2>
-          <div className="batch-style-body">
-            <StylePreview style={style} />
-            <label className="captions-field" htmlFor="batch-style">
-              Style
-              <select
-                id="batch-style"
-                value={presetId}
+          <p className="batch-style-help">
+            Pick one style for every video. You can still correct words in each video's preview.
+          </p>
+          <div className="batch-style-grid" role="group" aria-label="Caption styles">
+            {CAPTION_PRESETS.map((preset) => (
+              <StyleCard
+                key={preset.id}
+                preset={preset}
+                selected={preset.id === presetId}
                 disabled={rendering}
-                onChange={(event) => setPresetId(event.target.value)}
-              >
-                {CAPTION_PRESETS.map((preset) => (
-                  <option key={preset.id} value={preset.id}>{preset.name}</option>
-                ))}
-              </select>
-            </label>
+                onSelect={setPresetId}
+              />
+            ))}
           </div>
         </section>
 
