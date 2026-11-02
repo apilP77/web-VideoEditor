@@ -1,4 +1,5 @@
 import BatchCaptions from './batch-captions/BatchCaptions.jsx'
+import BatchSpeed from './batch-speed/BatchSpeed.jsx'
 import CropTrim from './crop-trim/CropTrim.jsx'
 import Captions from './captions/Captions.jsx'
 import Speed from './speed/Speed.jsx'
@@ -41,6 +42,15 @@ export const tools = [
     accent: 'teal',
     ready: true,
     component: BatchCaptions,
+  },
+  {
+    id: 'batch-speed',
+    name: 'Batch speed',
+    description: 'Change the speed of several videos, all together or one by one.',
+    icon: 'Gauge',
+    accent: 'amber',
+    ready: true,
+    component: BatchSpeed,
   },
   {
     id: 'crop-trim',

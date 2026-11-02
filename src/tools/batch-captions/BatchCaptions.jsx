@@ -16,6 +16,7 @@ import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import { isVideoFile } from '../../shared/utils/mediaFiles.js'
 import { buildAllSubtitleFiles, buildSubtitleFile, SUBTITLE_FORMATS } from '../../shared/batch/subtitleFiles.js'
 import { createZip } from '../../shared/utils/zip.js'
+import { saveBlob } from '../../shared/utils/saveBlob.js'
 import { clearBatch, loadBatch, saveBatch, serializeBatch } from '../../shared/storage/batchStorage.js'
 import { loadPresets, removePreset, savePresets, upsertPreset } from '../../shared/storage/batchPresets.js'
 import ReviewPanel from './ReviewPanel.jsx'
@@ -24,15 +25,6 @@ import './batchCaptions.css'
 const STATUS_LABELS = {
   ...QUEUE_STATUS_LABELS,
   done: 'Captions ready',
-}
-
-function saveBlob(blob, fileName) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.click()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 /**
