@@ -7,7 +7,8 @@ import { useBatchRunner } from '../../shared/batch/useBatchRunner.js'
 import { createCaptionsForFile } from '../../shared/batch/captionJob.js'
 import { renderCaptionedVideo } from '../../shared/batch/renderJob.js'
 import { CAPTION_PACES } from '../../shared/captions/engine.js'
-import { CAPTION_PRESETS, createCaptionStyle, waitForCaptionFonts } from '../../shared/captions/styles.js'
+import { CAPTION_PRESETS, waitForCaptionFonts } from '../../shared/captions/styles.js'
+import { createBatchCaptionStyle } from '../../shared/batch/batchStyle.js'
 import { LANGUAGE_OPTIONS, MODEL_OPTIONS } from '../../shared/captions/options.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import { isVideoFile } from '../../shared/utils/mediaFiles.js'
@@ -61,7 +62,7 @@ function BatchCaptions({ tool }) {
   const [notice, setNotice] = useState('')
   const [presetId, setPresetId] = useState(CAPTION_PRESETS[0].id)
   const [editingId, setEditingId] = useState(null)
-  const style = createCaptionStyle(presetId)
+  const style = createBatchCaptionStyle(presetId)
   const [fontsReady, setFontsReady] = useState(false)
   const [savedBatch, setSavedBatch] = useState(null)
   const hadItemsRef = useRef(false)
@@ -299,7 +300,7 @@ function BatchCaptions({ tool }) {
             {CAPTION_PRESETS.map((preset) => (
               <CaptionStyleCard
                 key={preset.id}
-                style={createCaptionStyle(preset.id)}
+                style={createBatchCaptionStyle(preset.id)}
                 selected={preset.id === presetId}
                 disabled={rendering}
                 fontsReady={fontsReady}
