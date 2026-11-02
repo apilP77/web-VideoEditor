@@ -86,11 +86,13 @@ function createAbortError() {
  *   cancelCurrent: () => void,
  *   stop: () => void,
  *   setDuration: (id: number, seconds: number) => void,
+ *   setProcess: (next: typeof process) => void,
  *   restore: (items: Partial<BatchItem>[]) => void,
  *   clear: () => void,
  * }} Runner API.
  */
 export function createBatchRunner({ process, limits = BATCH_LIMITS }) {
+  let handler = process
   let items = []
   let nextId = 1
   let running = false
@@ -164,7 +166,7 @@ export function createBatchRunner({ process, limits = BATCH_LIMITS }) {
     current = { id: item.id, controller }
     update(item.id, { status: 'running', percent: null, stage: '', error: '', technicalDetails: '' })
     try {
-      const result = await process(item, {
+      const result = await handler(item, {
         signal: controller.signal,
         onProgress: ({ percent, stage } = {}) => {
           if (controller.signal.aborted || current?.id !== item.id) return
@@ -234,6 +236,9 @@ export function createBatchRunner({ process, limits = BATCH_LIMITS }) {
     stop() {
       stopping = true
       current?.controller.abort()
+    },
+    setProcess(next) {
+      handler = next
     },
     setDuration(id, seconds) {
       if (Number.isFinite(seconds) && seconds > 0) update(id, { duration: seconds })

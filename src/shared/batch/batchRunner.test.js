@@ -189,6 +189,15 @@ describe('createBatchRunner', () => {
     expect(order).toEqual(['a.mp4', 'late.mp4'])
   })
 
+  it('uses the latest process function for items that have not started', async () => {
+    const used = []
+    const runner = createBatchRunner({ process: async () => used.push('old') })
+    runner.setProcess(async () => used.push('new'))
+    runner.add([file('a.mp4')])
+    await runner.start()
+    expect(used).toEqual(['new'])
+  })
+
   it('notifies subscribers and restores finished items without files', () => {
     const runner = createBatchRunner({ process: async () => {} })
     const listener = vi.fn()
