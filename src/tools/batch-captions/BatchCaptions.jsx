@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Button from '../../shared/components/Button.jsx'
 import CaptionStyleCard from '../../shared/components/CaptionStyleCard.jsx'
+import BatchQueue from '../../shared/components/BatchQueue.jsx'
+import { STATUS_LABELS as QUEUE_STATUS_LABELS } from '../../shared/components/batchQueueLabels.js'
 import UploadBox from '../../shared/components/UploadBox.jsx'
 import ToolLayout from '../../shared/components/ToolLayout.jsx'
 import { useBatchRunner } from '../../shared/batch/useBatchRunner.js'
@@ -20,11 +22,8 @@ import ReviewPanel from './ReviewPanel.jsx'
 import './batchCaptions.css'
 
 const STATUS_LABELS = {
-  queued: 'Waiting',
-  running: 'Working',
+  ...QUEUE_STATUS_LABELS,
   done: 'Captions ready',
-  failed: 'Failed',
-  cancelled: 'Stopped',
 }
 
 function saveBlob(blob, fileName) {
@@ -34,18 +33,6 @@ function saveBlob(blob, fileName) {
   link.download = fileName
   link.click()
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-
-function formatSize(bytes) {
-  return bytes >= 1073741824
-    ? `${(bytes / 1073741824).toFixed(1)} GB`
-    : `${Math.max(1, Math.round(bytes / 1048576))} MB`
-}
-
-function formatLength(seconds) {
-  if (!Number.isFinite(seconds) || seconds <= 0) return ''
-  const total = Math.round(seconds)
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }
 
 /**
@@ -411,151 +398,126 @@ function BatchCaptions({ tool }) {
         )}
 
         {items.length > 0 && (
-          <section className="batch-queue tool-panel" aria-label="Queue">
-            <div className="batch-queue-heading">
-              <h2>
-                {items.length} {items.length === 1 ? 'video' : 'videos'}
-                {done > 0 ? ` · ${done} done` : ''}
-              </h2>
-              <div className="batch-queue-actions">
-                {running ? (
-                  <Button variant="outline" onClick={() => runner.stop()}>Stop</Button>
-                ) : (
-                  <>
-                    <Button variant="outline" disabled={rendering} onClick={startNewBatch}>
-                      New batch
+          <BatchQueue
+            heading={`${items.length} ${items.length === 1 ? 'video' : 'videos'}${done > 0 ? ` · ${done} done` : ''}`}
+            statusLabels={STATUS_LABELS}
+            items={items}
+            toolbar={
+              running ? (
+                <Button variant="outline" onClick={() => runner.stop()}>Stop</Button>
+              ) : (
+                <>
+                  <Button variant="outline" disabled={rendering} onClick={startNewBatch}>
+                    New batch
+                  </Button>
+                  {failed > 0 && (
+                    <Button variant="outline" onClick={() => runner.retryFailed()}>
+                      Retry {failed} failed
                     </Button>
-                    {failed > 0 && (
-                      <Button variant="outline" onClick={() => runner.retryFailed()}>
-                        Retry {failed} failed
-                      </Button>
-                    )}
-                    {queued > 0 && (
-                      <Button variant="primary" onClick={() => runner.start()}>
-                        {done > 0 ? `Continue with ${queued} more` : 'Start captions'}
-                      </Button>
-                    )}
-                    {done > 0 && (
-                      <Button variant="outline" onClick={downloadAll}>
-                        Subtitles ZIP ({done})
-                      </Button>
-                    )}
-                    {done > 0 && (
-                      <Button
-                        variant={queued > 0 ? 'outline' : 'primary'}
-                        disabled={rendering}
-                        onClick={exportAllVideos}
-                      >
-                        Export all {done} videos
-                      </Button>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {missing > 0 && !running && (
-              <p className="tool-notice" role="status">
-                {missing} {missing === 1 ? 'video needs' : 'videos need'} to be added again
-                (drop them above) before they can be previewed, exported or captioned.
-                Subtitle downloads already work.
-              </p>
-            )}
-
-            <ol className="batch-list">
-              {items.map((item) => (
-                <li key={item.id} className={`batch-item is-${item.status}`}>
-                  <div className="batch-item-main">
-                    <strong className="batch-item-name">{item.name}</strong>
-                    <span className="batch-item-meta">
-                      {formatSize(item.size)}
-                      {formatLength(item.duration) && ` · ${formatLength(item.duration)}`}
-                      {item.status === 'done' && item.result
-                        ? ` · ${item.result.captionCount} captions`
-                        : ''}
-                    </span>
-                  </div>
-                  <div className="batch-item-status">
-                    <span className="batch-item-label">
-                      {item.status === 'running' && item.stage
-                        ? item.stage
-                        : STATUS_LABELS[item.status]}
-                    </span>
-                    {item.status === 'running' && (
-                      <span className="batch-item-bar" aria-hidden="true">
-                        <span style={{ width: `${item.percent ?? 0}%` }} />
-                      </span>
-                    )}
-                  </div>
-                  <div className="batch-item-actions">
-                    {item.status === 'done' && item.result?.captions && item.file && (
-                      <>
-                        <button
-                          type="button"
-                          aria-expanded={editingId === item.id}
-                          onClick={() => setEditingId(editingId === item.id ? null : item.id)}
-                        >
-                          {editingId === item.id ? 'Close preview' : 'Preview and edit'}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={running || renderOf(item)?.status === 'running'}
-                          onClick={() => exportVideo(item)}
-                        >
-                          Export video
-                        </button>
-                      </>
-                    )}
-                    {item.status === 'done' && item.result?.captions &&
-                      SUBTITLE_FORMATS.map((format) => (
-                        <button
-                          key={format.extension}
-                          type="button"
-                          aria-label={`Download ${format.label} for ${item.name}`}
-                          onClick={() => downloadSubtitle(item, format.extension)}
-                        >
-                          {format.label}
-                        </button>
-                      ))}
-                    {(item.status === 'failed' || item.status === 'cancelled') && item.file && (
-                      <button type="button" onClick={() => runner.retry(item.id)}>Retry</button>
-                    )}
+                  )}
+                  {queued > 0 && (
+                    <Button variant="primary" onClick={() => runner.start()}>
+                      {done > 0 ? `Continue with ${queued} more` : 'Start captions'}
+                    </Button>
+                  )}
+                  {done > 0 && (
+                    <Button variant="outline" onClick={downloadAll}>
+                      Subtitles ZIP ({done})
+                    </Button>
+                  )}
+                  {done > 0 && (
+                    <Button
+                      variant={queued > 0 ? 'outline' : 'primary'}
+                      disabled={rendering}
+                      onClick={exportAllVideos}
+                    >
+                      Export all {done} videos
+                    </Button>
+                  )}
+                </>
+              )
+            }
+            notice={
+              missing > 0 && !running && (
+                <p className="tool-notice" role="status">
+                  {missing} {missing === 1 ? 'video needs' : 'videos need'} to be added again
+                  (drop them above) before they can be previewed, exported or captioned.
+                  Subtitle downloads already work.
+                </p>
+              )
+            }
+            renderMeta={(item) =>
+              item.status === 'done' && item.result ? ` · ${item.result.captionCount} captions` : ''
+            }
+            renderActions={(item) => (
+              <>
+                {item.status === 'done' && item.result?.captions && item.file && (
+                  <>
                     <button
                       type="button"
-                      aria-label={`Remove ${item.name}`}
-                      onClick={() => runner.remove(item.id)}
+                      aria-expanded={editingId === item.id}
+                      onClick={() => setEditingId(editingId === item.id ? null : item.id)}
                     >
-                      Remove
+                      {editingId === item.id ? 'Close preview' : 'Preview and edit'}
                     </button>
-                  </div>
-                  {(() => {
-                    const render = item.status === 'done' ? renderOf(item) : null
-                    if (!render) return null
-                    if (render.status === 'failed') {
-                      return (
-                        <div className="batch-item-error" role="alert">
-                          <p>Could not export this video: {render.error}</p>
-                          {render.technicalDetails && (
-                            <details>
-                              <summary>Details</summary>
-                              <pre>{render.technicalDetails}</pre>
-                            </details>
-                          )}
-                        </div>
-                      )
-                    }
-                    return (
-                      <p className="batch-render-status" role="status">
-                        {render.status === 'done'
-                          ? `Video saved as ${render.result?.filename ?? 'a file'}`
-                          : render.status === 'running'
-                            ? `${render.stage || 'Adding captions'}${render.percent !== null ? ` · ${render.percent}%` : ''}`
-                            : render.status === 'queued'
-                              ? 'Waiting to export'
-                              : 'Export stopped'}
-                      </p>
-                    )
-                  })()}
+                    <button
+                      type="button"
+                      disabled={running || renderOf(item)?.status === 'running'}
+                      onClick={() => exportVideo(item)}
+                    >
+                      Export video
+                    </button>
+                  </>
+                )}
+                {item.status === 'done' && item.result?.captions &&
+                  SUBTITLE_FORMATS.map((format) => (
+                    <button
+                      key={format.extension}
+                      type="button"
+                      aria-label={`Download ${format.label} for ${item.name}`}
+                      onClick={() => downloadSubtitle(item, format.extension)}
+                    >
+                      {format.label}
+                    </button>
+                  ))}
+                {(item.status === 'failed' || item.status === 'cancelled') && item.file && (
+                  <button type="button" onClick={() => runner.retry(item.id)}>Retry</button>
+                )}
+                <button
+                  type="button"
+                  aria-label={`Remove ${item.name}`}
+                  onClick={() => runner.remove(item.id)}
+                >
+                  Remove
+                </button>
+              </>
+            )}
+            renderExtra={(item) => {
+              const render = item.status === 'done' ? renderOf(item) : null
+              return (
+                <>
+                  {render?.status === 'failed' && (
+                    <div className="batch-item-error" role="alert">
+                      <p>Could not export this video: {render.error}</p>
+                      {render.technicalDetails && (
+                        <details>
+                          <summary>Details</summary>
+                          <pre>{render.technicalDetails}</pre>
+                        </details>
+                      )}
+                    </div>
+                  )}
+                  {render && render.status !== 'failed' && (
+                    <p className="batch-render-status" role="status">
+                      {render.status === 'done'
+                        ? `Video saved as ${render.result?.filename ?? 'a file'}`
+                        : render.status === 'running'
+                          ? `${render.stage || 'Adding captions'}${render.percent !== null ? ` · ${render.percent}%` : ''}`
+                          : render.status === 'queued'
+                            ? 'Waiting to export'
+                            : 'Export stopped'}
+                    </p>
+                  )}
                   {editingId === item.id && item.result?.captions && item.file && (
                     <ReviewPanel
                       file={item.file}
@@ -565,21 +527,10 @@ function BatchCaptions({ tool }) {
                       onClose={() => setEditingId(null)}
                     />
                   )}
-                  {item.error && (
-                    <div className="batch-item-error" role="alert">
-                      <p>{item.error}</p>
-                      {item.technicalDetails && (
-                        <details>
-                          <summary>Details</summary>
-                          <pre>{item.technicalDetails}</pre>
-                        </details>
-                      )}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ol>
-          </section>
+                </>
+              )
+            }}
+          />
         )}
       </div>
     </ToolLayout>
