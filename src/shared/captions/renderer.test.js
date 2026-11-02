@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { drawCaption, getCaptionLines } from './renderer.js'
+import { drawCaption, getCaptionLines, getCenteredPosition } from './renderer.js'
 import { createCaptionStyle } from './styles.js'
 
 function createContext() {
@@ -11,6 +11,21 @@ function createContext() {
   for (const method of methods) context[method] = vi.fn()
   return context
 }
+
+describe('getCenteredPosition', () => {
+  it('sits just under the middle so the text box is centred', () => {
+    const position = getCenteredPosition({ size: 100 }, 720)
+    // 720 px canvas: font is 46 px, so the shift is 0.51 * 46 / 720 = 3.3 points.
+    expect(position).toBeCloseTo(50 - (46.08 * 0.51 * 100) / 720, 3)
+    expect(position).toBeLessThan(50)
+  })
+
+  it('moves further from 50 for larger text and for the 12 px minimum on small canvases', () => {
+    expect(getCenteredPosition({ size: 150 }, 720)).toBeLessThan(getCenteredPosition({ size: 100 }, 720))
+    // 135 px tall: the 12 px minimum applies, so the shift is 0.51 * 12 / 135.
+    expect(getCenteredPosition({ size: 100 }, 135)).toBeCloseTo(50 - (12 * 0.51 * 100) / 135, 5)
+  })
+})
 
 describe('drawCaption', () => {
   it('draws active words and leaves the shared style unchanged', () => {

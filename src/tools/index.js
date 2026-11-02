@@ -1,3 +1,4 @@
+import BatchCaptions from './batch-captions/BatchCaptions.jsx'
 import CropTrim from './crop-trim/CropTrim.jsx'
 import Captions from './captions/Captions.jsx'
 import Speed from './speed/Speed.jsx'
@@ -38,8 +39,8 @@ export const tools = [
     description: 'Caption several videos in one queue with shared settings.',
     icon: 'Layers',
     accent: 'teal',
-    ready: false,
-    component: null,
+    ready: true,
+    component: BatchCaptions,
   },
   {
     id: 'crop-trim',

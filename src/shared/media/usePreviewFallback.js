@@ -246,6 +246,22 @@ export function usePreviewFallback({ file, videoRef, waitBeforeFFmpeg, proxyLarg
     onLoadedMetadata(event) {
       const video = event.currentTarget
       const src = video.currentSrc || video.getAttribute('src')
+      if (proxyUrl && src === proxyUrl && (video.videoWidth < 2 || video.videoHeight < 2)) {
+        // A copy without a picture is no better than the original: drop it
+        // and show the poster with an explanation instead of a black box.
+        debugLog('preview', 'preview copy has no picture', { videoWidth: video.videoWidth })
+        resumeRef.current = null
+        setProxy({ source: null, file: null })
+        setFrame((current) =>
+          current.source === file ? current : { source: file, available: false, details: '' },
+        )
+        setConversion((current) =>
+          current.source === file
+            ? { ...current, status: 'failed', error: 'The preview copy has no picture.', details: '' }
+            : current,
+        )
+        return
+      }
       if (proxyUrl && src === proxyUrl && resumeRef.current) {
         const { time, playing } = resumeRef.current
         resumeRef.current = null

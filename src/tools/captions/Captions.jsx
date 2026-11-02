@@ -18,6 +18,7 @@ import '@fontsource/bebas-neue/400.css'
 import '@fontsource/anton/400.css'
 import '@fontsource/caveat/700.css'
 import Button from '../../shared/components/Button.jsx'
+import CaptionStyleCard from '../../shared/components/CaptionStyleCard.jsx'
 import PreviewPoster, { PreviewCopyBadge } from '../../shared/components/PreviewPoster.jsx'
 import ProcessingRing from '../../shared/components/ProcessingRing.jsx'
 import ResultCard from '../../shared/components/ResultCard.jsx'
@@ -46,6 +47,7 @@ import {
   splitCaption,
 } from '../../shared/captions/engine.js'
 import { canOpenCaptionStep } from '../../shared/captions/workflow.js'
+import { LANGUAGE_OPTIONS, MODEL_OPTIONS } from '../../shared/captions/options.js'
 import {
   getCaptionExportFilename,
   getCaptionExportWords,
@@ -73,32 +75,6 @@ import {
 } from '../../shared/whisper/whisperClient.js'
 import './captions.css'
 
-const MODEL_OPTIONS = [
-  { value: 'fast', label: 'Fast · tiny · about 60–200 MB' },
-  { value: 'balanced', label: 'Balanced · base · about 110–360 MB' },
-  { value: 'accurate', label: 'Accurate · small · about 300 MB–1 GB' },
-]
-const LANGUAGE_OPTIONS = [
-  ['auto', 'Auto-detect'],
-  ['english', 'English'],
-  ['spanish', 'Spanish'],
-  ['french', 'French'],
-  ['german', 'German'],
-  ['italian', 'Italian'],
-  ['portuguese', 'Portuguese'],
-  ['dutch', 'Dutch'],
-  ['russian', 'Russian'],
-  ['japanese', 'Japanese'],
-  ['korean', 'Korean'],
-  ['chinese', 'Chinese'],
-  ['arabic', 'Arabic'],
-  ['hindi', 'Hindi'],
-  ['turkish', 'Turkish'],
-  ['ukrainian', 'Ukrainian'],
-  ['vietnamese', 'Vietnamese'],
-  ['thai', 'Thai'],
-  ['swedish', 'Swedish'],
-]
 const PROCESSING_STAGES = [
   { id: 'loading-model', label: 'Preparing the speech model', weight: 25 },
   { id: 'reading-audio', label: 'Pulling out the audio', weight: 15 },
@@ -141,16 +117,6 @@ const HIGHLIGHT_SWATCHES = [
   '#a78bfa',
   '#ffffff',
 ]
-const PREVIEW_CAPTION = {
-  start: 0,
-  end: 3,
-  words: [
-    { word: 'Make', start: 0, end: 0.6 },
-    { word: 'every', start: 0.6, end: 1.2 },
-    { word: 'moment', start: 1.2, end: 2 },
-    { word: 'count.', start: 2, end: 2.8 },
-  ],
-}
 const STYLE_STORAGE_KEY = 'web-video-toolkit-caption-style'
 const NUDGE_SECONDS = 0.05
 
@@ -287,30 +253,6 @@ function LiveTranscript({ words }) {
         </div>
       )}
     </div>
-  )
-}
-
-function CaptionStyleThumbnail({ style, selected, onSelect, disabled, fontsReady }) {
-  const canvasRef = useRef(null)
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || !fontsReady) return
-    const context = canvas.getContext('2d')
-    if (!context) return
-    drawCaption(context, PREVIEW_CAPTION, 1.5, style, canvas.width, canvas.height)
-  }, [fontsReady, style])
-
-  return (
-    <button
-      className={`caption-style-card${selected ? ' is-selected' : ''}`}
-      type="button"
-      aria-pressed={selected}
-      disabled={disabled}
-      onClick={onSelect}
-    >
-      <canvas ref={canvasRef} width="240" height="135" aria-hidden="true" />
-      <span>{CAPTION_PRESETS.find((preset) => preset.id === style.preset)?.name}</span>
-    </button>
   )
 }
 
@@ -1342,7 +1284,7 @@ function Captions({ tool }) {
                             preset: preset.id,
                           })
                           return (
-                            <CaptionStyleThumbnail
+                            <CaptionStyleCard
                               key={preset.id}
                               style={previewStyle}
                               selected={style.preset === preset.id}

@@ -4,11 +4,13 @@ import './mediaControls.css'
 /**
  * Provides a keyboard-accessible file chooser and drag-and-drop target.
  *
- * @param {{onFileSelect: (file: File) => void, accept?: string, disabled?: boolean, title?: string, helpText?: string, formats?: string}} props Upload options.
+ * @param {{onFileSelect: (file: File) => void, onFilesSelect?: (files: File[]) => void, multiple?: boolean, accept?: string, disabled?: boolean, title?: string, helpText?: string, formats?: string}} props Upload options.
  * @returns {import('react').JSX.Element} File selection control.
  */
 function UploadBox({
   onFileSelect,
+  onFilesSelect,
+  multiple = false,
   accept = 'video/*',
   disabled = false,
   title = 'Choose or drop a video',
@@ -17,9 +19,9 @@ function UploadBox({
 }) {
   function handleDrop(event) {
     event.preventDefault()
-    if (!disabled && event.dataTransfer.files[0]) {
-      onFileSelect(event.dataTransfer.files[0])
-    }
+    if (disabled || !event.dataTransfer.files[0]) return
+    if (multiple && onFilesSelect) onFilesSelect([...event.dataTransfer.files])
+    else onFileSelect(event.dataTransfer.files[0])
   }
 
   return (
@@ -31,10 +33,14 @@ function UploadBox({
       <input
         type="file"
         accept={accept}
+        multiple={multiple}
         disabled={disabled}
         onChange={(event) => {
-          const file = event.target.files?.[0]
-          if (file) onFileSelect(file)
+          const files = [...(event.target.files ?? [])]
+          if (files.length > 0) {
+            if (multiple && onFilesSelect) onFilesSelect(files)
+            else onFileSelect(files[0])
+          }
           event.target.value = ''
         }}
       />

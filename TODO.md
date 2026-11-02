@@ -131,22 +131,23 @@ Legend: `[ ]` todo, `[x]` done
 - [ ] Check memory use of 4K HEVC preview copies and exports on a typical laptop
 
 ## Phase 9: Shared batch system
-- [ ] Build one reusable batch runner that every tool can plug into
-- [ ] Queue jobs and process one at a time
-- [ ] Show per-item status and progress; allow retry and removal
-- [ ] Continue processing after an item fails
-- [ ] Apply tool settings to all queued items
-- [ ] Save and reuse batch presets
-- [ ] Add a review/edit step before saving each result
-- [ ] Persist queue and results in IndexedDB
-- [ ] Download results as a ZIP
-- [ ] Free memory between items
+- [x] Build one reusable batch runner that every tool can plug into (unit tests)
+- [x] Queue jobs and process one at a time (unit tests)
+- [x] Show per-item status and progress; allow retry and removal (unit tests; seen in the browser)
+- [x] Continue processing after an item fails (unit tests)
+- [x] Apply tool settings to all queued items
+- [x] Save and reuse batch presets (logic unit tested; the saved-settings controls are not yet seen in a browser)
+- [x] Add a review/edit step before saving each result (preview with captions and word editing seen in the browser)
+- [x] Persist queue and results in IndexedDB (serialization unit tested; refresh and restore not yet confirmed in a browser)
+- [x] Download results as a ZIP (subtitle ZIP; unit tests for the ZIP writer)
+- [x] Free memory between items (finished items drop decoded media; videos are rendered and saved one at a time)
+- [ ] Brave with 4K HEVC (parked): the preview was blank because the browser cannot decode the picture; the preview copy now falls back to FFmpeg (slow on 4K), not yet confirmed. Exporting captions in Brave still needs an FFmpeg path.
 
 ## Phase 10: Batch captions tool
-- [ ] Use the shared batch runner for multi-file caption jobs
-- [ ] Choose one caption style and settings for the whole batch
-- [ ] Process each video one at a time (transcribe, render, review)
-- [ ] Retry failed items without stopping the remaining queue
+- [x] Use the shared batch runner for multi-file caption jobs
+- [x] Choose one caption style and settings for the whole batch
+- [x] Process each video one at a time (transcribe, render, review)
+- [x] Retry failed items without stopping the remaining queue
 
 ## Phase 11: Polish
 - [ ] Loading, empty and error states everywhere

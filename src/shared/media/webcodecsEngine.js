@@ -14,6 +14,7 @@ import {
 } from 'mediabunny'
 import { normalizeCropPixels } from '../utils/cropGeometry.js'
 import { getMediaCapabilities } from './capabilities.js'
+import { getLostVideoReason } from './conversionCheck.js'
 
 let nextConversionId = 1
 
@@ -117,16 +118,11 @@ async function convertVideo(file, { start, end, crop, exact = false }, options =
     }
 
     conversion = await Conversion.init(conversionOptions)
-    if (!conversion.isValid) {
-      const discarded = conversion.discardedTracks
-        .map(({ reason }) => reason)
-        .filter(Boolean)
-        .join('; ')
-      throw new Error(
-        discarded
-          ? `This video cannot be converted by the fast engine: ${discarded}`
-          : 'This video cannot be converted by the fast engine.',
-      )
+    // Never export an audio-only file when the browser cannot decode the
+    // picture; FFmpeg takes over instead.
+    const lostVideo = getLostVideoReason(conversion)
+    if (lostVideo) {
+      throw new Error(`This video cannot be converted by the fast engine: ${lostVideo}`)
     }
     if (options.signal?.aborted) {
       await conversion.cancel()
