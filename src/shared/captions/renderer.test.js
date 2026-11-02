@@ -15,8 +15,9 @@ function createContext() {
 describe('getCenteredPosition', () => {
   it('sits just under the middle so the text box is centred', () => {
     const position = getCenteredPosition({ size: 100 }, 720)
+    // 720 px canvas: font is 46 px, so the shift is 0.51 * 46 / 720 = 3.3 points.
+    expect(position).toBeCloseTo(50 - (46.08 * 0.51 * 100) / 720, 3)
     expect(position).toBeLessThan(50)
-    expect(position).toBeGreaterThan(48)
   })
 
   it('moves further from 50 for larger text and for the 12 px minimum on small canvases', () => {
