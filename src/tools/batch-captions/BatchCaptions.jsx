@@ -8,6 +8,8 @@ import { CAPTION_PACES } from '../../shared/captions/engine.js'
 import { LANGUAGE_OPTIONS, MODEL_OPTIONS } from '../../shared/captions/options.js'
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import { isVideoFile } from '../../shared/utils/mediaFiles.js'
+import { buildAllSubtitleFiles, buildSubtitleFile, SUBTITLE_FORMATS } from '../../shared/batch/subtitleFiles.js'
+import { createZip } from '../../shared/utils/zip.js'
 import './batchCaptions.css'
 
 const STATUS_LABELS = {
@@ -16,6 +18,15 @@ const STATUS_LABELS = {
   done: 'Captions ready',
   failed: 'Failed',
   cancelled: 'Stopped',
+}
+
+function saveBlob(blob, fileName) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 function formatSize(bytes) {
@@ -63,6 +74,15 @@ function BatchCaptions({ tool }) {
   const queued = items.filter((item) => item.status === 'queued').length
   const failed = items.filter((item) => item.status === 'failed' || item.status === 'cancelled').length
   const done = items.filter((item) => item.status === 'done').length
+
+  function downloadSubtitle(item, extension) {
+    const file = buildSubtitleFile(item.name, item.result.captions, extension)
+    saveBlob(new Blob([file.data], { type: file.mimeType }), file.name)
+  }
+
+  function downloadAll() {
+    saveBlob(createZip(buildAllSubtitleFiles(items)), 'batch-captions.zip')
+  }
 
   async function addFiles(selected) {
     const videos = selected.filter(isVideoFile)
@@ -173,13 +193,16 @@ function BatchCaptions({ tool }) {
                         Retry {failed} failed
                       </Button>
                     )}
-                    <Button
-                      variant="primary"
-                      disabled={queued === 0}
-                      onClick={() => runner.start()}
-                    >
-                      {done > 0 ? 'Continue' : 'Start captions'}
-                    </Button>
+                    {queued > 0 && (
+                      <Button variant="primary" onClick={() => runner.start()}>
+                        {done > 0 ? `Continue with ${queued} more` : 'Start captions'}
+                      </Button>
+                    )}
+                    {done > 0 && (
+                      <Button variant={queued > 0 ? 'outline' : 'primary'} onClick={downloadAll}>
+                        Download all ({done}) as ZIP
+                      </Button>
+                    )}
                   </>
                 )}
               </div>
@@ -211,6 +234,17 @@ function BatchCaptions({ tool }) {
                     )}
                   </div>
                   <div className="batch-item-actions">
+                    {item.status === 'done' && item.result?.captions &&
+                      SUBTITLE_FORMATS.map((format) => (
+                        <button
+                          key={format.extension}
+                          type="button"
+                          aria-label={`Download ${format.label} for ${item.name}`}
+                          onClick={() => downloadSubtitle(item, format.extension)}
+                        >
+                          {format.label}
+                        </button>
+                      ))}
                     {(item.status === 'failed' || item.status === 'cancelled') && item.file && (
                       <button type="button" onClick={() => runner.retry(item.id)}>Retry</button>
                     )}
