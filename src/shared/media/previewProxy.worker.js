@@ -8,6 +8,7 @@ import {
   Output,
 } from 'mediabunny'
 import { getMediaCapabilities } from './capabilities.js'
+import { getLostVideoReason } from './conversionCheck.js'
 import { getPreviewProxySize } from './previewProxy.js'
 
 let activeConversion = null
@@ -71,12 +72,11 @@ async function createProxy({ file, requestId }) {
     }
 
     activeConversion = await Conversion.init(options)
-    if (!activeConversion.isValid) {
-      const reasons = activeConversion.discardedTracks
-        .map(({ reason }) => reason)
-        .filter(Boolean)
-        .join('; ')
-      throw new Error(reasons || 'Mediabunny could not prepare the preview copy.')
+    // An audio-only copy would play sound over a black box, so a lost
+    // picture is a failure here and FFmpeg gets a turn.
+    const lostVideo = getLostVideoReason(activeConversion)
+    if (lostVideo) {
+      throw new Error(`This browser cannot decode the video picture (${lostVideo}).`)
     }
     if (cancelRequested) {
       await activeConversion.cancel()

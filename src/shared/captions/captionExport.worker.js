@@ -7,6 +7,7 @@ import {
   Mp4OutputFormat,
   Output,
 } from 'mediabunny'
+import { getLostVideoReason } from '../media/conversionCheck.js'
 import inter400 from '@fontsource/inter/files/inter-latin-400-normal.woff2?url'
 import inter600 from '@fontsource/inter/files/inter-latin-600-normal.woff2?url'
 import inter700 from '@fontsource/inter/files/inter-latin-700-normal.woff2?url'
@@ -155,12 +156,11 @@ async function exportWithWebCodecs({ file, captions, style }) {
     }
 
     activeConversion = await Conversion.init(options)
-    if (!activeConversion.isValid) {
-      const reasons = activeConversion.discardedTracks
-        .map(({ reason }) => reason)
-        .filter(Boolean)
-        .join('; ')
-      throw new Error(reasons || 'Mediabunny could not prepare this video for MP4 export.')
+    // Without this, a picture the browser cannot decode would export as an
+    // audio-only file with no captions.
+    const lostVideo = getLostVideoReason(activeConversion)
+    if (lostVideo) {
+      throw new Error(`This browser cannot decode the video picture for MP4 export (${lostVideo}).`)
     }
     if (cancelRequested) {
       await activeConversion.cancel()
