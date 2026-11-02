@@ -180,12 +180,76 @@
   grid-template-columns: 48px minmax(0, 1fr);
   align-items: center;
   gap: 8px;
+  border-radius: 8px;
+}
+
+.batch-caption-editor li.is-active {
+  background: #231b33;
 }
 
 .batch-caption-time {
-  color: #8e8797;
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: #a69fb3;
+  font: inherit;
   font-size: 0.74rem;
   font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.batch-review {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1.1fr) minmax(240px, 1fr);
+  align-items: start;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+.batch-review-video {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
+.batch-review-stage {
+  max-height: min(55vh, 420px);
+}
+
+.batch-review-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  pointer-events: none;
+}
+
+.batch-review-words {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+}
+
+.batch-review-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #f2eef8;
+}
+
+.batch-review-heading button {
+  min-height: 36px;
+  border: 1px solid #4a4158;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: transparent;
+  color: #e9e3f3;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
 }
 
 .batch-caption-editor input {
@@ -206,6 +270,12 @@
 .batch-item-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.5;
+}
+
+@media (max-width: 760px) {
+  .batch-review {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 640px) {

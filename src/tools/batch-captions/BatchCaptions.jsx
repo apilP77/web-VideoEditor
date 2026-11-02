@@ -5,7 +5,7 @@ import ToolLayout from '../../shared/components/ToolLayout.jsx'
 import { useBatchRunner } from '../../shared/batch/useBatchRunner.js'
 import { createCaptionsForFile } from '../../shared/batch/captionJob.js'
 import { renderCaptionedVideo } from '../../shared/batch/renderJob.js'
-import { CAPTION_PACES, editCaptionText } from '../../shared/captions/engine.js'
+import { CAPTION_PACES } from '../../shared/captions/engine.js'
 import { drawCaption } from '../../shared/captions/renderer.js'
 import { CAPTION_PRESETS, createCaptionStyle, waitForCaptionFonts } from '../../shared/captions/styles.js'
 import { LANGUAGE_OPTIONS, MODEL_OPTIONS } from '../../shared/captions/options.js'
@@ -13,6 +13,7 @@ import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import { isVideoFile } from '../../shared/utils/mediaFiles.js'
 import { buildAllSubtitleFiles, buildSubtitleFile, SUBTITLE_FORMATS } from '../../shared/batch/subtitleFiles.js'
 import { createZip } from '../../shared/utils/zip.js'
+import ReviewPanel from './ReviewPanel.jsx'
 import './batchCaptions.css'
 
 const STATUS_LABELS = {
@@ -88,38 +89,6 @@ function StylePreview({ style }) {
       role="img"
       aria-label="Sample of the chosen caption style"
     />
-  )
-}
-
-/** Lets each caption's text be corrected; timing is spread evenly over the same range. */
-function CaptionEditor({ captions, onChange }) {
-  return (
-    <ol className="batch-caption-editor">
-      {captions.map((caption, index) => {
-        const text = caption.text ?? caption.words.map((word) => word.word).join(' ')
-        return (
-          <li key={`${index}-${caption.start}-${text}`}>
-            <span className="batch-caption-time">{formatLength(caption.start) || '0:00'}</span>
-            <input
-              type="text"
-              defaultValue={text}
-              aria-label={`Caption ${index + 1}`}
-              onBlur={(event) => {
-                const value = event.target.value.trim()
-                if (!value) {
-                  event.target.value = text
-                } else if (value !== text) {
-                  onChange(index, editCaptionText(caption, value))
-                }
-              }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') event.currentTarget.blur()
-              }}
-            />
-          </li>
-        )
-      })}
-    </ol>
   )
 }
 
@@ -396,7 +365,7 @@ function BatchCaptions({ tool }) {
                           aria-expanded={editingId === item.id}
                           onClick={() => setEditingId(editingId === item.id ? null : item.id)}
                         >
-                          {editingId === item.id ? 'Close' : 'Edit words'}
+                          {editingId === item.id ? 'Close preview' : 'Preview and edit'}
                         </button>
                         <button
                           type="button"
@@ -457,10 +426,13 @@ function BatchCaptions({ tool }) {
                       </p>
                     )
                   })()}
-                  {editingId === item.id && item.result?.captions && (
-                    <CaptionEditor
+                  {editingId === item.id && item.result?.captions && item.file && (
+                    <ReviewPanel
+                      file={item.file}
                       captions={item.result.captions}
-                      onChange={(index, caption) => changeCaption(item, index, caption)}
+                      style={style}
+                      onCaptionChange={(index, caption) => changeCaption(item, index, caption)}
+                      onClose={() => setEditingId(null)}
                     />
                   )}
                   {item.error && (
