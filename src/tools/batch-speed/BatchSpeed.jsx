@@ -19,10 +19,17 @@ import {
 import { getMediaInfo } from '../../shared/media/mediaInfo.js'
 import { isVideoFile } from '../../shared/utils/mediaFiles.js'
 import { saveBlob } from '../../shared/utils/saveBlob.js'
+import { createZipFromBlobs } from '../../shared/utils/zip.js'
 import './batchSpeed.css'
 
 function formatSpeed(speed) {
   return `${Number(speed.toFixed(2))}x`
+}
+
+function formatBytes(bytes) {
+  return bytes >= 1073741824
+    ? `${(bytes / 1073741824).toFixed(1)} GB`
+    : `${Math.max(1, Math.round(bytes / 1048576))} MB`
 }
 
 function formatLength(seconds) {
@@ -44,8 +51,10 @@ function BatchSpeed({ tool }) {
   const [keepAudioPitchNatural, setKeepAudioPitchNatural] = useState(true)
   const [removeAudio, setRemoveAudio] = useState(false)
   const [notice, setNotice] = useState('')
+  const [zipping, setZipping] = useState(false)
 
-  // Each finished video is saved straight away, so only one is in memory.
+  // Finished videos wait in this tab until the user saves them, one by one or
+  // together in a ZIP. Removing a video frees its result.
   const { runner, items, running } = useBatchRunner(async (item, context) => {
     const speed = getItemSpeed({ mode, sharedSpeed, itemSpeeds, itemId: item.id })
     const output = await changeSpeedForFile(item.file, {
@@ -55,14 +64,29 @@ function BatchSpeed({ tool }) {
       signal: context.signal,
       onProgress: context.onProgress,
     })
-    saveBlob(output.blob, output.filename)
-    return { filename: output.filename, speed }
+    return { filename: output.filename, speed, blob: output.blob }
   })
 
   const queued = items.filter((item) => item.status === 'queued').length
   const failed = items.filter((item) => item.status === 'failed' || item.status === 'cancelled').length
-  const done = items.filter((item) => item.status === 'done').length
+  const finished = items.filter((item) => item.status === 'done' && item.result?.blob)
+  const done = finished.length
+  const finishedBytes = finished.reduce((sum, item) => sum + item.result.blob.size, 0)
   const blocking = getBlockingReason({ items, mode, sharedSpeed, itemSpeeds })
+
+  async function downloadZip() {
+    setZipping(true)
+    try {
+      const zip = await createZipFromBlobs(
+        finished.map((item) => ({ name: item.result.filename, blob: item.result.blob })),
+      )
+      saveBlob(zip, 'batch-speed.zip')
+    } catch (zipError) {
+      setNotice(zipError instanceof Error ? zipError.message : 'Could not make the ZIP.')
+    } finally {
+      setZipping(false)
+    }
+  }
 
   function speedOf(item) {
     return getItemSpeed({ mode, sharedSpeed, itemSpeeds, itemId: item.id })
@@ -198,13 +222,30 @@ function BatchSpeed({ tool }) {
                       {done > 0 ? `Continue with ${queued} more` : 'Start changing speed'}
                     </Button>
                   )}
+                  {done > 0 && (
+                    <Button
+                      variant={queued > 0 ? 'outline' : 'primary'}
+                      disabled={zipping}
+                      onClick={downloadZip}
+                    >
+                      {zipping ? 'Making ZIP…' : `Download all as ZIP (${done})`}
+                    </Button>
+                  )}
                 </>
               )
             }
             notice={
-              blocking && !running && (
-                <p className="tool-notice" role="status">{blocking}</p>
-              )
+              <>
+                {blocking && !running && (
+                  <p className="tool-notice" role="status">{blocking}</p>
+                )}
+                {done > 0 && (
+                  <p className="batch-speed-memory">
+                    Finished videos stay in this tab ({formatBytes(finishedBytes)}) until you save
+                    them. Removing a video frees its space. Closing or refreshing the page loses them.
+                  </p>
+                )}
+              </>
             }
             renderMeta={(item) => {
               const speed = speedOf(item)
@@ -214,6 +255,15 @@ function BatchSpeed({ tool }) {
             }}
             renderActions={(item) => (
               <>
+                {item.status === 'done' && item.result?.blob && (
+                  <button
+                    type="button"
+                    aria-label={`Save ${item.result.filename}`}
+                    onClick={() => saveBlob(item.result.blob, item.result.filename)}
+                  >
+                    Save video
+                  </button>
+                )}
                 {(item.status === 'failed' || item.status === 'cancelled') && (
                   <button type="button" onClick={() => runner.retry(item.id)}>Retry</button>
                 )}
@@ -231,7 +281,8 @@ function BatchSpeed({ tool }) {
               if (item.status === 'done') {
                 return (
                   <p className="batch-speed-saved" role="status">
-                    Saved as {item.result?.filename ?? 'a file'}
+                    Ready: {item.result?.filename ?? 'a file'}
+                    {item.result?.blob ? ` (${formatBytes(item.result.blob.size)})` : ''}
                   </p>
                 )
               }

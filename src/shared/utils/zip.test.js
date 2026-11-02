@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { crc32, createZip, uniqueNames } from './zip.js'
+import { crc32, createZip, createZipFromBlobs, uniqueNames } from './zip.js'
 
 describe('crc32', () => {
   it('matches the standard check values', () => {
@@ -16,6 +16,28 @@ describe('uniqueNames', () => {
       'b.srt',
       'a (3).srt',
     ])
+  })
+})
+
+describe('createZipFromBlobs', () => {
+  it('produces the same archive as createZip for the same bytes', async () => {
+    const first = new Uint8Array([9, 8, 7, 6])
+    const second = new Uint8Array([1, 2, 3])
+    const fromBytes = createZip([
+      { name: 'a.mp4', data: first },
+      { name: 'a.mp4', data: second },
+    ])
+    const fromBlobs = await createZipFromBlobs([
+      { name: 'a.mp4', blob: new Blob([first]) },
+      { name: 'a.mp4', blob: new Blob([second]) },
+    ])
+    expect(fromBlobs.type).toBe('application/zip')
+    expect(new Uint8Array(await fromBlobs.arrayBuffer())).toEqual(new Uint8Array(await fromBytes.arrayBuffer()))
+  })
+
+  it('refuses archives that cannot fit the classic ZIP size', async () => {
+    const huge = { size: 4 * 1024 * 1024 * 1024, arrayBuffer: async () => new ArrayBuffer(0) }
+    await expect(createZipFromBlobs([{ name: 'big.mp4', blob: huge }])).rejects.toThrow(/too large/)
   })
 })
 

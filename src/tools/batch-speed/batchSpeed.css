@@ -37,6 +37,13 @@
   text-align: right;
 }
 
+.batch-speed-memory {
+  margin: 10px 0 0;
+  color: #a69fb3;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
 .batch-speed-saved {
   grid-column: 1 / -1;
   margin: 0;
