@@ -149,6 +149,15 @@ Legend: `[ ]` todo, `[x]` done
 - [x] Process each video one at a time (transcribe, render, review)
 - [x] Retry failed items without stopping the remaining queue
 
+## Phase 10b: Batch speed and Batch crop and trim (branch `feat/batch-speed-crop`)
+- [x] Share the queue list and toolbar between batch tools (`BatchQueue`)
+- [x] Batch speed with two modes: same speed for all, or a speed for each video (unit tests; checked in the browser)
+- [x] Results wait in the tab; save each video or download all as a ZIP built one video at a time (unit tests)
+- [ ] Pull the crop and trim editor (draggable crop, trim, aspect presets) out of `CropTrim.jsx` so it can be reused; the single tool must look and work the same
+- [ ] Batch crop and trim with two modes: same crop and trim for all (centred crop at each video's size, seconds cut from the start and end), or set each video separately in the editor
+- [ ] Save per video or as a ZIP, same as Batch speed
+- [ ] Browser check of Batch crop and trim on 1080p H.264
+
 ## Phase 11: Polish
 - [ ] Loading, empty and error states everywhere
 - [ ] File size / duration warnings
@@ -179,7 +188,7 @@ Legend: `[ ]` todo, `[x]` done
 - [ ] Batch compress
 - [ ] Batch trim
 - [ ] Batch crop
-- [ ] Batch speed change
+- [x] Batch speed change (built as the Batch speed tool)
 - [ ] Batch audio extraction
 
 ---

@@ -1,0 +1,47 @@
+.batch-mode-toggle {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.batch-mode-option {
+  position: relative;
+  display: grid;
+  gap: 2px;
+  border: 1px solid #3a3347;
+  border-radius: 10px;
+  padding: 12px 14px 12px 40px;
+  background: #15121b;
+  cursor: pointer;
+}
+
+.batch-mode-option.is-selected {
+  border-color: #a78bfa;
+  background: #1d1829;
+}
+
+.batch-mode-option:focus-within {
+  outline: 2px solid #c4b5fd;
+  outline-offset: 2px;
+}
+
+.batch-mode-option input {
+  position: absolute;
+  top: 15px;
+  left: 14px;
+  width: 16px;
+  height: 16px;
+  accent-color: #a78bfa;
+}
+
+.batch-mode-label {
+  color: #f2eef8;
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.batch-mode-help {
+  color: #a69fb3;
+  font-size: 0.8rem;
+}
