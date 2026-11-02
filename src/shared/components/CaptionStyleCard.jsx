@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { drawCaption } from '../captions/renderer.js'
+import { drawCaption, getCenteredPosition } from '../captions/renderer.js'
 import { CAPTION_PRESETS, PREVIEW_CAPTION } from '../captions/styles.js'
 import './captionStyleCard.css'
 
@@ -19,7 +19,9 @@ function CaptionStyleCard({ style, selected, onSelect, disabled = false, fontsRe
     if (!canvas || !fontsReady) return
     const context = canvas.getContext('2d')
     if (!context) return
-    drawCaption(context, PREVIEW_CAPTION, 1.5, style, canvas.width, canvas.height)
+    // Centre the sample in the card; real captions keep the style's position.
+    const centred = { ...style, position: getCenteredPosition(style, canvas.height) }
+    drawCaption(context, PREVIEW_CAPTION, 1.5, centred, canvas.width, canvas.height)
   }, [fontsReady, style])
 
   return (

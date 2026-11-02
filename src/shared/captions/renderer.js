@@ -87,6 +87,24 @@ function drawText(ctx, word, x, baseline, style, active, textColor) {
 }
 
 /**
+ * Returns the `position` value that centres a one-line caption vertically.
+ *
+ * `position` is the distance of the caption's bottom from the bottom edge,
+ * as a percentage of the canvas height. Style cards use this to show the
+ * sample in the middle of a small thumbnail; real videos keep the style's
+ * own low position.
+ *
+ * @param {{size: number}} style Caption style model.
+ * @param {number} height Canvas height in pixels.
+ * @returns {number} Position percentage that centres one line of text.
+ */
+export function getCenteredPosition(style, height) {
+  const fontSize = Math.max(12, height * FONT_HEIGHT_RATIO * (style.size / 100))
+  // The text box's middle sits about 0.51 font heights above the anchor.
+  return 50 - ((fontSize * 0.51) / height) * 100
+}
+
+/**
  * Draws a timed caption onto a canvas context for preview and future export.
  *
  * @param {CanvasRenderingContext2D} ctx Canvas context.
