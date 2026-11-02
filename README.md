@@ -239,6 +239,16 @@ Every tool can plug into one shared batch runner. It owns the queue and processe
 
 Batch queue items include `{ id, file, status, progress, result, error }` and are stored in IndexedDB. Tool-specific work is supplied to the runner so captions, trim, crop, speed, and audio extraction can share the same queue behavior.
 
+### Batch captions (built)
+The Batch captions tool is the first user of the shared runner (`src/shared/batch/`).
+
+- **Limits:** 10 videos, 4 GB and 30 minutes in total. Videos are processed one at a time, and a failed video never stops the rest.
+- **Shared settings:** one model, language, pace and caption style for the whole batch. Settings can be saved by name and reused (stored in localStorage, up to 12).
+- **Caption look:** every style uses one font and a smaller size, with a rounded box behind the spoken word. The preset only picks the highlight colour and animation (`batchStyle.js`). The style cards, the preview and the export all use the same style.
+- **Review:** each finished video can be previewed with its captions drawn over it, and each caption can be edited.
+- **Output:** per-video SRT, VTT and TXT, a ZIP of all subtitles, and captions burned into the video. Videos are rendered and saved one at a time, so only one finished video is in memory.
+- **Refresh:** the queue, captions and settings are kept in IndexedDB for 14 days. Video files cannot be kept by the browser, so after a refresh the videos are dropped on the page again and matched by name and size.
+
 ### Saved work and offline use
 Save recent transcripts in IndexedDB for 14 days so users can return to their work after a refresh. A service worker caches the app shell for offline use after the first page load. Large models and media still need to be available locally or cached before they can be used offline.
 
