@@ -7,6 +7,7 @@ import { drawCaption } from '../../shared/captions/renderer.js'
 import { waitForCaptionFonts } from '../../shared/captions/styles.js'
 import { getMediaDuration } from '../../shared/media/duration.js'
 import { getPreviewSize } from '../../shared/media/previewProxy.js'
+import { collectPreviewDiagnostics } from '../../shared/media/previewDiagnostics.js'
 import { usePreviewFallback } from '../../shared/media/usePreviewFallback.js'
 
 function formatClock(seconds) {
@@ -35,6 +36,7 @@ function ReviewPanel({ file, captions, style, onCaptionChange, onClose }) {
   const [frameVersion, setFrameVersion] = useState(0)
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 })
   const [maxWidth, setMaxWidth] = useState(560)
+  const [details, setDetails] = useState('')
 
   // The video box must match the video's shape exactly, or the caption layer
   // drawn over it is stretched. Same approach as the Captions tool.
@@ -132,6 +134,31 @@ function ReviewPanel({ file, captions, style, onCaptionChange, onClose }) {
 
   const activeIndex = getActiveCaption(captions, currentTime)
 
+  async function showDetails() {
+    let isBrave = false
+    try {
+      isBrave = Boolean(await navigator.brave?.isBrave?.())
+    } catch {
+      // Not Brave, or the check is blocked.
+    }
+    const facts = collectPreviewDiagnostics({
+      video: videoRef.current,
+      canvas: canvasRef.current,
+      frame: frameRef.current,
+      file,
+      preview,
+      extra: {
+        isBrave,
+        fontsReady,
+        captionCount: captions.length,
+        activeCaptionIndex: activeIndex,
+        stageSize: size,
+        sourceDimensionsUsed: { width: sourceWidth, height: sourceHeight },
+      },
+    })
+    setDetails(JSON.stringify(facts, null, 2))
+  }
+
   return (
     <div className="batch-review">
       <div className="batch-review-video">
@@ -200,6 +227,23 @@ function ReviewPanel({ file, captions, style, onCaptionChange, onClose }) {
           onPlayPause={togglePlayback}
           onSeek={seek}
         />
+        <details
+          className="batch-review-details"
+          onToggle={(event) => {
+            if (event.currentTarget.open) showDetails()
+          }}
+        >
+          <summary>Preview details</summary>
+          <button type="button" onClick={showDetails}>Refresh</button>
+          <button
+            type="button"
+            onClick={() => navigator.clipboard?.writeText(details).catch(() => {})}
+            disabled={!details}
+          >
+            Copy
+          </button>
+          <pre>{details || 'Loading…'}</pre>
+        </details>
       </div>
 
       <div className="batch-review-words">

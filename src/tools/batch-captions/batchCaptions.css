@@ -285,3 +285,36 @@
   font-size: 0.9rem;
   line-height: 1.5;
 }
+
+.batch-review-details {
+  color: #aaa3b2;
+  font-size: 0.82rem;
+}
+
+.batch-review-details summary {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.batch-review-details button {
+  min-height: 32px;
+  margin: 0 6px 6px 0;
+  border: 1px solid #4a4158;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: transparent;
+  color: #e9e3f3;
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+
+.batch-review-details pre {
+  max-height: 220px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
